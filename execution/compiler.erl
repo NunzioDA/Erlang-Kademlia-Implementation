@@ -9,12 +9,13 @@
 % The compile_file/1 function compiles a single file.
 % -----------------------------------------------------------------------------
 
-- module(compiler).
-- export([compile/0]).
+-module(compiler).
+-export([compile/0]).
 
 compile() ->
-    Files = ["../src/starter.erl", "../src/node.erl"],
-    lists:foreach(fun(F) -> compile_file(F) end, Files).
+    {ok, Files} = file:list_dir("../src/"),
+    ErlFiles = [filename:join("../src", File) || File <- Files, filename:extension(File) =:= ".erl"],
+    lists:foreach(fun(F) -> compile_file(F) end, ErlFiles).
 
 compile_file(F) ->
     io:format("~p~n", [c:c(F)]).

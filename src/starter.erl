@@ -10,4 +10,14 @@
 - export([start/0]).
 - import(node, [talk/0]).
 
-start() -> node:talk().
+start() -> 
+    PID = node:start(),
+    io:format("~p~n", [PID]).
+
+% quit() ->
+    % SystemPids = [self(), group_leader()],
+    % Pids = [Pid || Pid <- processes(), not lists:member(Pid, SystemPids)],
+    % lists:foreach(fun(Pid) ->
+    %     catch exit(Pid, kill)
+    % end, Pids),
+    % ok.

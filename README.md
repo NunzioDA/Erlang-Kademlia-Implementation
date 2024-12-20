@@ -7,19 +7,23 @@
 
 
 ## Getting Started
+1. Move into execution directory:
+    ```sh
+    cd execution
+    ```
 
-1. Start the Erlang shell:
+2. Start the Erlang shell:
     ```sh
     erl
     ```    
 
-2. Compile the modules using the module compiler:
+3. Compile the modules using the module compiler:
     ```sh
     c(compiler).
     compiler:compile().
     ```
 
-3. Use the starter module to start the simulation:
+4. Use the starter module to start the simulation:
     ```erlang
     starter:start().
     ```

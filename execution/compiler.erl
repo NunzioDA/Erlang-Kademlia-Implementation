@@ -13,7 +13,7 @@
 - export([compile/0]).
 
 compile() ->
-    Files = ["src/starter.erl", "src/node.erl"],
+    Files = ["../src/starter.erl", "../src/node.erl"],
     lists:foreach(fun(F) -> compile_file(F) end, Files).
 
 compile_file(F) ->

@@ -99,7 +99,7 @@ branch_lookup(RoutingTable, BranchId) ->
 % This function is used to lookup for the K closest nodes starting from a branch.
 % After checking the branch, the function checks the branches on the left and on the right
 % till it finds K nodes or the end of the routing table.
-% The function returns a map containing the K closest nodes.
+% The function returns a map containing the K or more closest nodes.
 lookup_for_k_nodes(RoutingTable, K_Bucket_Size, BranchID, K) ->
     lookup_for_k_nodes(RoutingTable, 0, K_Bucket_Size, BranchID, K,0).
 
@@ -141,9 +141,20 @@ handle_call({find_node, HashID}, _, State) ->
     K_Bucket_Size = 20,
     BranchID = utils:get_subtree_index(HashID, my_hash_id(K)),
 
-    NodeList = lookup_for_k_nodes(RoutingTable, K_Bucket_Size, BranchID, K),
-    
-    {reply, {ok, NodeList}, State}.
+    NodeMap = lookup_for_k_nodes(RoutingTable, K_Bucket_Size, BranchID, K),
+    NodeList = maps:to_list(NodeMap),
+    SortedNodeList = lists:sort(
+        fun({Key1, _}, {Key2, _}) -> 
+            utils:xor_distance(HashID, Key1) > utils:xor_distance(HashID, Key2) 
+        end, 
+        NodeList
+    ),
+    if length(SortedNodeList) > K_Bucket_Size -> 
+        K_NodeList = lists:sublist(SortedNodeList, K);
+        true -> K_NodeList = SortedNodeList
+    end,
+
+    {reply, {ok, K_NodeList}, State}.
 
 handle_cast({store}, State) ->
     {ok, State}.

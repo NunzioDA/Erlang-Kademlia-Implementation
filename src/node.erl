@@ -29,12 +29,6 @@ my_hash_id(K) ->
 send_request(NodeID, Request) ->
     gen_server:call(NodeID, Request).
 
-load_debug_data(RoutingTable,_) ->
-    save_node("cia1", RoutingTable, 4),
-    save_node("cia2", RoutingTable, 4),
-    save_node("cia3", RoutingTable, 4),
-    save_node("cia4", RoutingTable, 4).
-
 % This function is used to save a node in the routing table.
 save_node(NodePid, RoutingTable, K) ->
     NodeHashId = utils:k_hash(NodePid, K),
@@ -69,8 +63,9 @@ init([K,T]) ->
     
     RoutingTable = ets:new(RoutingName, [set, private]),
     ValuesTable = ets:new(ValuesName, [set, private]),
-    load_debug_data(RoutingTable,ValuesTable), 
-    {ok, {RoutingTable, ValuesTable, K, T}}. 
+
+    Bucket_Size = 20,
+    {ok, {RoutingTable, ValuesTable, K, T, Bucket_Size}}. 
 
 % This function is used to merge two nodes maps.
 merge_nodes_maps(Map1, Map2) ->
@@ -104,8 +99,7 @@ lookup_for_k_nodes(RoutingTable, K_Bucket_Size, BranchID, K) ->
     lookup_for_k_nodes(RoutingTable, 0, K_Bucket_Size, BranchID, K,0).
 
 lookup_for_k_nodes(RoutingTable, NodesCount, K_Bucket_Size, BranchID, K, I) 
-    when BranchID + I =< K, NodesCount < K_Bucket_Size orelse BranchID - I >= 0, NodesCount < K_Bucket_Size ->
-
+    when BranchID + I =< K; BranchID - I >= 0 , NodesCount < K_Bucket_Size ->
     if BranchID + I =< K ->
         NodesMap = branch_lookup(RoutingTable, BranchID + I);
     true -> NodesMap = #{}
@@ -135,29 +129,70 @@ lookup_for_k_nodes(_, NodesCount, K_Bucket_Size, BranchID, K, I)
     when NodesCount>=K_Bucket_Size orelse BranchID + I > K, BranchID - I < 0  -> 
     #{}.
 
+% This function is used to find the K closest nodes in the network to a given hash id.
+% The function starts from the routing table and iterates over the branches to make requests
+% to the nodes.
+find_node(RoutingTable, HashID, Bucket_Size, K) ->
+    BranchID = utils:get_subtree_index(HashID, my_hash_id(K)),
+    NodeMap = lookup_for_k_nodes(RoutingTable, Bucket_Size, BranchID, K),
+    NodeList = utils:map_to_list(NodeMap),
+    find_node(HashID, Bucket_Size, K, NodeList, []).
+find_node(HashID, _, K, [], ContactedNodes) -> 
+    SortedNodeList = utils:sort_node_list(ContactedNodes, HashID),
+    lists:sublist(SortedNodeList, K);
+find_node(HashID, Bucket_Size, K, [{NodeHash, NodePid}|T], ContactedNodes) ->
+    io:format("Contacting node: ~p~n", [NodePid]),
+    case gen_server:call(list_to_pid(NodePid), {find_node, HashID}) of
+        {ok, NodeList} ->
+            FilteredNodeList = lists:filter(
+                fun(Node) -> 
+                    {_,FilterPid} = Node,
+                    not lists:member(Node, ContactedNodes) andalso                    
+                    FilterPid /= pid_to_list(self())
+                end, 
+                NodeList
+            ),
+            NewNodeList = lists:append(T, FilteredNodeList),
+
+            NewContactedNodes = lists:append(ContactedNodes, [{NodeHash, NodePid}]),
+            Result = find_node(HashID, Bucket_Size, K, NewNodeList, NewContactedNodes);
+        _ -> 
+            Result = find_node(HashID, Bucket_Size, K, T, ContactedNodes)
+    end,
+    Result.
+
 
 handle_call({find_node, HashID}, _, State) ->
-    {RoutingTable,_, K, _} = State,
-    K_Bucket_Size = 20,
+    {RoutingTable,_, K, _, Bucket_Size} = State,
+   
     BranchID = utils:get_subtree_index(HashID, my_hash_id(K)),
 
-    NodeMap = lookup_for_k_nodes(RoutingTable, K_Bucket_Size, BranchID, K),
-    NodeList = maps:to_list(NodeMap),
-    SortedNodeList = lists:sort(
-        fun({Key1, _}, {Key2, _}) -> 
-            utils:xor_distance(HashID, Key1) > utils:xor_distance(HashID, Key2) 
-        end, 
-        NodeList
-    ),
-    if length(SortedNodeList) > K_Bucket_Size -> 
+    NodeMap = lookup_for_k_nodes(RoutingTable, Bucket_Size, BranchID, K),
+    NodeList = utils:map_to_list(NodeMap),
+    SortedNodeList = utils:sort_node_list(NodeList, HashID),
+    if length(SortedNodeList) > Bucket_Size -> 
         K_NodeList = lists:sublist(SortedNodeList, K);
         true -> K_NodeList = SortedNodeList
     end,
 
-    {reply, {ok, K_NodeList}, State}.
+    {reply, {ok, K_NodeList}, State};
+% handle_call({store, HashId}, _, State) ->
+%     {RoutingTable, _, K, _, Bucket_Size} = State,
+%     io:format("Storing node with hash id: ~p~n", [HashId]),
+%     Response = find_node(RoutingTable, HashId, Bucket_Size, K),
+%     {reply, {ok, Response}, State};
+handle_call(_, _, State) ->
+    {reply, not_handled_request, State}.
 
-handle_cast({store}, State) ->
-    {ok, State}.
+
+
+handle_cast({store, _}, _) ->
+    {ok, ok}.
+% handle_cast({save_node, NodePid}, State) ->
+%     {RoutingTable, _, K, _, _} = State,
+%     io:format("Saving node: ~p~n", [NodePid]),
+%     save_node(pid_to_list(NodePid), RoutingTable, K),
+%     {noreply, State}.
 
 terminate(_Reason, _State) ->
     ok.

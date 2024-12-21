@@ -11,7 +11,7 @@
 - import(node, [talk/0]).
 
 start() -> 
-    PID = node:start(),
+    PID = node:start(4, 4),
     io:format("~p~n", [PID]).
 
 % quit() ->

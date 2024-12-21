@@ -7,7 +7,7 @@
 
 - module(utils).
 
-- export([k_hash/2, get_subtree_index/2]).
+- export([k_hash/2, get_subtree_index/2, xor_distance/2]).
 
 % This function is used to convert a byte into a list of bits.
 byte_to_bit_list(Byte) ->
@@ -38,3 +38,11 @@ get_subtree_index([H|T1], [H|T2], Index) ->
 get_subtree_index([H|_], [H2|_], Index) when H =/= H2 -> 
     Index.
     
+% This function is used to calculate the xor distance between two ids.
+xor_distance([], []) -> 0;
+xor_distance([H1|T1], [H2|T2]) ->
+    case H1 =:= H2 of
+        true -> Distance = 0;
+        false -> Distance = math:pow(2,length(T1))
+    end,
+    Distance + xor_distance(T1, T2).

@@ -7,7 +7,7 @@
 
 - module(utils).
 
-- export([k_hash/2, get_subtree_index/2, xor_distance/2]).
+- export([k_hash/2, get_subtree_index/2, xor_distance/2, sort_node_list/2, map_to_list/1]).
 
 % This function is used to convert a byte into a list of bits.
 byte_to_bit_list(Byte) ->
@@ -46,3 +46,21 @@ xor_distance([H1|T1], [H2|T2]) ->
         false -> Distance = math:pow(2,length(T1))
     end,
     Distance + xor_distance(T1, T2).
+
+% This function is used to sort a list of nodes by their xor distance from a target id.
+sort_node_list(NodeList, TargetId) ->
+    lists:sort(
+        fun({Key1, _}, {Key2, _}) -> 
+            utils:xor_distance(TargetId, Key1) > utils:xor_distance(TargetId, Key2) 
+        end, 
+        NodeList
+    ).
+
+% This function is used to convert a map into a list of key-value pairs, expanding lists of values.
+% Used to convert the routing table into a list of key-value pairs.
+map_to_list(Map) ->
+    Pairs = maps:to_list(Map),
+    lists:flatmap(fun expand/1, Pairs).
+
+expand({Key, ValueList}) ->
+    [ {Key, Value} || Value <- ValueList ].

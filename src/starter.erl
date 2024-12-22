@@ -11,8 +11,19 @@
 - import(node, [talk/0]).
 
 start() -> 
-    PID = node:start(4, 4),
-    io:format("~p~n", [PID]).
+    debug_find_node().
+
+debug_find_node() ->
+    PID = node:start(5, 4),
+    PID1 = node:start(5, 4),
+    PID2 = node:start(5, 4),
+    PID3 = node:start(5, 4),
+    PID4 = node:start(5, 4),
+    gen_server:cast(PID,{save_node, PID1}),
+    gen_server:cast(PID,{save_node, PID2}),
+    gen_server:cast(PID2,{save_node, PID3}),
+    gen_server:cast(PID3,{save_node, PID4}),
+    node:send_request(PID,{store, utils:k_hash("5", 5)}).
 
 % quit() ->
     % SystemPids = [self(), group_leader()],

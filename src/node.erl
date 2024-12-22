@@ -100,6 +100,8 @@ lookup_for_k_nodes(RoutingTable, K_Bucket_Size, BranchID, K) ->
 
 lookup_for_k_nodes(RoutingTable, NodesCount, K_Bucket_Size, BranchID, K, I) 
     when BranchID + I =< K; BranchID - I >= 0 , NodesCount < K_Bucket_Size ->
+    
+    % Lookup for the nodes in the first (I=0) branch or the nearest branch to the right
     if BranchID + I =< K ->
         NodesMap = branch_lookup(RoutingTable, BranchID + I);
     true -> NodesMap = #{}
@@ -107,6 +109,7 @@ lookup_for_k_nodes(RoutingTable, NodesCount, K_Bucket_Size, BranchID, K, I)
 
     Len = maps:size(NodesMap),
 
+    % Lookup for the nodes in the nearest branch to the left
     if BranchID - I >= 0, Len < K_Bucket_Size, I > 0 ->
         OtherNodes = branch_lookup(RoutingTable, BranchID - I);        
     true -> OtherNodes = #{}
@@ -114,6 +117,7 @@ lookup_for_k_nodes(RoutingTable, NodesCount, K_Bucket_Size, BranchID, K, I)
 
     Len2 = maps:size(OtherNodes) + Len + NodesCount,
 
+    % If the number of nodes isnt enough, make a recursive call
     case Len2 >= K_Bucket_Size of
         true ->
             OtherNodes2 = #{};
@@ -176,23 +180,23 @@ handle_call({find_node, HashID}, _, State) ->
     end,
 
     {reply, {ok, K_NodeList}, State};
-% handle_call({store, HashId}, _, State) ->
-%     {RoutingTable, _, K, _, Bucket_Size} = State,
-%     io:format("Storing node with hash id: ~p~n", [HashId]),
-%     Response = find_node(RoutingTable, HashId, Bucket_Size, K),
-%     {reply, {ok, Response}, State};
+handle_call({store, HashId}, _, State) ->
+    {RoutingTable, _, K, _, Bucket_Size} = State,
+    io:format("Storing node with hash id: ~p~n", [HashId]),
+    Response = find_node(RoutingTable, HashId, Bucket_Size, K),
+    {reply, {ok, Response}, State};
 handle_call(_, _, State) ->
     {reply, not_handled_request, State}.
 
 
 
 handle_cast({store, _}, _) ->
-    {ok, ok}.
-% handle_cast({save_node, NodePid}, State) ->
-%     {RoutingTable, _, K, _, _} = State,
-%     io:format("Saving node: ~p~n", [NodePid]),
-%     save_node(pid_to_list(NodePid), RoutingTable, K),
-%     {noreply, State}.
+    {ok, ok};
+handle_cast({save_node, NodePid}, State) ->
+    {RoutingTable, _, K, _, _} = State,
+    io:format("Saving node: ~p~n", [NodePid]),
+    save_node(pid_to_list(NodePid), RoutingTable, K),
+    {noreply, State}.
 
 terminate(_Reason, _State) ->
     ok.

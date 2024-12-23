@@ -26,7 +26,7 @@ to_bit_list(<<Bit:1/bits, Rest/bits>>) ->
 % This function is used to create a K-bit hash from a given data.
 k_hash(Data, K) when is_integer(K), K > 0 -> 
     Hash = crypto:hash(sha256, Data),
-    % Take the first K bits of the hash
+    % Takes the first K bits of the hash
     <<KBits:K/bits, _/bits>> = Hash,
     KBits.
 
@@ -51,12 +51,11 @@ first_different_bit_index(<<>>, Index) ->
 
 % This function is used to calculate the xor distance between two binary ids.
 xor_distance(HashID1, HashID2) ->
-    xor_distance(HashID1, HashID2, <<>>).
-xor_distance(<<>>, <<>>, Acc) ->
-    Acc;
-xor_distance(<<Bit1:1, Rest1/bits>>, <<Bit2:1, Rest2/bits>>, Acc) ->
-    XorBit = Bit1 bxor Bit2,
-    xor_distance(Rest1, Rest2, <<Acc/bits, XorBit:1>>).
+    K = bit_size(HashID1),
+    <<N1:K>> = HashID1,
+    <<N2:K>> = HashID2,
+    R = N1 bxor N2,
+    <<R:K>>.
 
 % This function is used to sort a list of nodes by their xor distance from a target id.
 sort_node_list(NodeList, TargetId) ->

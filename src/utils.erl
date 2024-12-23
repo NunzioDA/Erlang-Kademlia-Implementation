@@ -6,8 +6,7 @@
 % -----------------------------------------------------------------------------
 
 - module(utils).
-
-- export([k_hash/2, get_subtree_index/2, xor_distance/2, sort_node_list/2, map_to_list/1, to_bit_list/1]).
+- export([k_hash/2, get_subtree_index/2, xor_distance/2, sort_node_list/2, to_bit_list/1]).
 
 
 % This function is used to convert a bitstring into a list of bits.
@@ -72,12 +71,3 @@ sort_node_list(NodeList, TargetId) ->
         end, 
         NodeList
     ).
-
-% This function is used to convert a map into a list of key-value pairs, expanding lists of values.
-% Used to convert the routing table into a list of key-value pairs.
-map_to_list(Map) ->
-    Pairs = maps:to_list(Map),
-    lists:flatmap(fun expand/1, Pairs).
-
-expand({Key, ValueList}) ->
-    [ {Key, Value} || Value <- ValueList ].

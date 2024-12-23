@@ -46,10 +46,12 @@ get_subtree_index(Binary1, Binary2) ->
 % This function is used to get the index of the most significant bit in a binary.
 most_significant_bit_index(Binary) ->
     most_significant_bit_index(Binary, 1).
+% When the first bit is 1 or the binary is empty, the index is returned.
 most_significant_bit_index(<<1:1, _/bits>>, Index) ->
     Index;
 most_significant_bit_index(<<>>, Index) ->
     Index;
+% Otherwise, the function is called recursively increasing the Index and removing the first bit.
 most_significant_bit_index(<<_:1, Rest/bits>>, Index) ->
     most_significant_bit_index(Rest, Index + 1).
 

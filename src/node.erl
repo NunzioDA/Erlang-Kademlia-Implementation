@@ -57,6 +57,7 @@ save_node(NodePid, RoutingTable, K) ->
 % This function initializes the state of the gen_server
 % creating the routing table and the values table.
 init([K,T]) ->
+    % Initializing the routing table and the values table with unique names
     UniqueInteger = integer_to_list(erlang:unique_integer([positive])),
     RoutingName = list_to_atom("routing_table" ++ UniqueInteger),
     ValuesName = list_to_atom("values_table" ++ UniqueInteger),    
@@ -97,7 +98,8 @@ branch_lookup(RoutingTable, BranchId) ->
 % The function returns a map containing the K or more closest nodes.
 lookup_for_k_nodes(RoutingTable, K_Bucket_Size, BranchID, K) ->
     lookup_for_k_nodes(RoutingTable, 0, K_Bucket_Size, BranchID, K,0).
-
+% This clause is called when the number of nodes is not enough and 
+% the I index has not reached the end of the routing table.
 lookup_for_k_nodes(RoutingTable, NodesCount, K_Bucket_Size, BranchID, K, I) 
     when BranchID + I =< K; BranchID - I >= 0 , NodesCount < K_Bucket_Size ->
     
@@ -129,6 +131,8 @@ lookup_for_k_nodes(RoutingTable, NodesCount, K_Bucket_Size, BranchID, K, I)
     Result = merge_nodes_maps(Merge, OtherNodes2),
 
     Result;
+% This clause is called when eather the number of nodes is enough or 
+% the function has reached the end of the routing table.
 lookup_for_k_nodes(_, NodesCount, K_Bucket_Size, BranchID, K, I) 
     when NodesCount>=K_Bucket_Size orelse BranchID + I > K, BranchID - I < 0  -> 
     #{}.
@@ -141,13 +145,17 @@ find_node(RoutingTable, HashID, Bucket_Size, K) ->
     NodeMap = lookup_for_k_nodes(RoutingTable, Bucket_Size, BranchID, K),
     NodeList = utils:map_to_list(NodeMap),
     find_node(HashID, Bucket_Size, K, NodeList, []).
+% This clause is called when the list of nodes is empty
+% returning a sublist of K nodes.
 find_node(HashID, _, K, [], ContactedNodes) -> 
     SortedNodeList = utils:sort_node_list(ContactedNodes, HashID),
     lists:sublist(SortedNodeList, K);
+% This clause is called when the list of nodes is not empty
+% and will make a find_node request to the first node in the list.
 find_node(HashID, Bucket_Size, K, [{NodeHash, NodePid}|T], ContactedNodes) ->
-    io:format("Contacting node: ~p~n", [NodePid]),
-    case gen_server:call(list_to_pid(NodePid), {find_node, HashID}) of
+    case send_request(list_to_pid(NodePid), {find_node, HashID}) of
         {ok, NodeList} ->
+            % Filter the nodes that have already been contacted
             FilteredNodeList = lists:filter(
                 fun(Node) -> 
                     {_,FilterPid} = Node,
@@ -161,6 +169,7 @@ find_node(HashID, Bucket_Size, K, [{NodeHash, NodePid}|T], ContactedNodes) ->
             NewContactedNodes = lists:append(ContactedNodes, [{NodeHash, NodePid}]),
             Result = find_node(HashID, Bucket_Size, K, NewNodeList, NewContactedNodes);
         _ -> 
+            % If the node is not reachable, make a recursive call on T
             Result = find_node(HashID, Bucket_Size, K, T, ContactedNodes)
     end,
     Result.

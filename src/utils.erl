@@ -31,22 +31,27 @@ k_hash(Data, K) when is_integer(K), K > 0 ->
     KBits.
 
 
+% debug() ->
+%     Start = erlang:monotonic_time(),
+%     lists:foreach(fun(_) -> get_subtree_index(<<257:256>>, <<1:256>>) end, lists:seq(1, 100000)),
+%     End = erlang:monotonic_time(),
+%     Duration = End - Start,
+%     io:format("Execution time: ~p microseconds~n", [Duration]).
+
 % This function is used to get the index of the subtree that contains the target id.
-get_subtree_index(TargetId, MyId) -> 
-    FirstBitIndex = first_different_bit_index(xor_distance(TargetId, MyId)),
-    FirstBitIndex.
-% This function is used to get the index of the first different bit between two binary ids.
-first_different_bit_index(Binary) ->
-    first_different_bit_index(Binary, 1).
-first_different_bit_index(<<Bit:1, Rest/bits>>, Index) ->
-    case Bit of
-        1 -> 
-            Index;
-        0 -> 
-            first_different_bit_index(Rest, Index + 1)
-    end;
-first_different_bit_index(<<>>, Index) ->
-    Index. 
+get_subtree_index(Binary1, Binary2) ->
+    Xor = xor_distance(Binary1, Binary2),
+    most_significant_bit_index(Xor).
+
+% This function is used to get the index of the most significant bit in a binary.
+most_significant_bit_index(Binary) ->
+    most_significant_bit_index(Binary, 1).
+most_significant_bit_index(<<1:1, _/bits>>, Index) ->
+    Index;
+most_significant_bit_index(<<>>, Index) ->
+    Index;
+most_significant_bit_index(<<_:1, Rest/bits>>, Index) ->
+    most_significant_bit_index(Rest, Index + 1).
 
 
 % This function is used to calculate the xor distance between two binary ids.

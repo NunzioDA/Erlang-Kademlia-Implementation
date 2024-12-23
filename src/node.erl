@@ -5,40 +5,44 @@
 % Description: This module manages the node behaviour.
 % -----------------------------------------------------------------------------
 
-- module(node).
-- behaviour(gen_server).
-- export([start/2, send_request/3, ping_node/1]).
+-module(node).
+-behaviour(gen_server).
+-export([init/1, handle_call/3, handle_cast/2]).
+-export([start/2, send_request/3, ping_node/1, store_value/5]).
 
 % Starts a new node in the Kademlia network.
 % K -> Number of bits to represent a node ID.
 % T -> Time interval for republishing data.
 % Returns the process identifier (PID) of the newly created node.
 start(K, T) ->
-    start_link(K, T).
+    start_link(K, T)
+.
 
 % Starts the node process.
 % gen_server:start_link/3 calls init/1, who takes in input [K, T].
 start_link(K, T) ->
     {ok, Pid} = gen_server:start_link(?MODULE, [K, T], []),
-    Pid.
+    Pid
+.
 
 % Initializes the state of the node when it is created.
-% Creates two ETS tables:
+% Creates one ETS table and a map:
 % - RoutingTable: Used to store the routing information of the node.
-% - ValuesTable: Used to store key-value pairs managed by the node.
+% - ValuesMap: Used to store key-value pairs managed by the node.
 init([K, T]) ->
     % Generate a unique integer to create distinct ETS table names for each node.
     UniqueInteger = integer_to_list(erlang:unique_integer([positive])),    
-    % Create unique table names for routing and values by appending the unique integer.
+    % Create unique table name for routing by appending the unique integer.
     RoutingName = list_to_atom("routing_table" ++ UniqueInteger),
-    ValuesName = list_to_atom("values_table" ++ UniqueInteger),
-    % Initialize ETS tables with the specified properties.
+    % Initialize ETS table with the specified properties.
     RoutingTable = ets:new(RoutingName, [set, private]),
-    ValuesTable = ets:new(ValuesName, [set, private]),
+    % Initialize ValuesTable as an empty map.
+    ValuesTable = #{},
     % Define the bucket size for routing table entries.
     Bucket_Size = 20,
     % Return the initialized state, containing ETS tables and configuration parameters.
-    {ok, {RoutingTable, ValuesTable, K, T, Bucket_Size}}.
+    {ok, {RoutingTable, ValuesTable, K, T, Bucket_Size}}
+.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%                     %%%
@@ -49,7 +53,8 @@ init([K, T]) ->
 % This function is used to get the hash id of the node starting from his pid.
 my_hash_id(K) ->
     PidString = pid_to_list(self()),
-    utils:k_hash(PidString, K).
+    utils:k_hash(PidString, K)
+.
 
 % Saves the information about a node into the routing table.
 % NodePid: The process identifier of the node to be saved. It is used to contact the node.
@@ -99,64 +104,67 @@ save_node(NodePid, RoutingTable, K, K_Bucket_Size) ->
     end
 .
 
-% This function is used to lookup for the nodes map in a branch.
+% This function is used to lookup for the nodes list in a branch.
 branch_lookup(RoutingTable, BranchId) ->
     case ets:lookup(RoutingTable, BranchId) of
-        % Return a map if BranchId is found.
-        [{_, NodeMap}] -> NodeMap;
-        % Return an empty map if BranchId is not found.
-        [] -> #{} 
-    end.
+        % Return a list if BranchId is found.
+        [{BranchId, NodeList}] -> NodeList;
+        % Return an empty list if BranchId is not found.
+        [] -> [] 
+    end
+.
 
 % This function is used to lookup for the K closest nodes starting from a branch.
 % After checking the branch, the function checks the branches on the left and on the right
 % till it finds K nodes or the end of the routing table.
-% The function returns a map containing the K or more closest nodes.
+% The function returns a list containing the K or more closest nodes.
 lookup_for_k_nodes(RoutingTable, K_Bucket_Size, BranchID, K) ->
     % Start the recursive lookup from the initial state: 0 nodes found, initial index I=0.
-    lookup_for_k_nodes(RoutingTable, 0, K_Bucket_Size, BranchID, K, 0).
-
+    lookup_for_k_nodes(RoutingTable, 0, K_Bucket_Size, BranchID, K, 0)
+.
 % Main function that recursively searches for K closest nodes. NodesCount is the number
 % of nodes collected so far. BranchID is the starting index for lookup. I is the current
 % step or offset in the lookup process.
 lookup_for_k_nodes(RoutingTable, NodesCount, K_Bucket_Size, BranchID, K, I) 
     when BranchID + I =< K; BranchID - I >= 0 , NodesCount < K_Bucket_Size ->
-    % Look up nodes in the branch on the right (BranchID + I).
-    % I = 0, so first we look within the starting branch.
-    if 
-        BranchID + I =< K ->
-            NodesMap = branch_lookup(RoutingTable, BranchID + I);
-        true -> NodesMap = #{}
-    end,
-    % Get the size of NodesMap.
-    Len = maps:size(NodesMap),
-    % Look up nodes in the branch on the left (BranchID - I).
-    if 
-        BranchID - I >= 0, Len < K_Bucket_Size, I > 0 ->
-            OtherNodes = branch_lookup(RoutingTable, BranchID - I);        
-        true -> OtherNodes = #{}
-    end,
-    % Calculate the total number of nodes from both sides.
-    Len2 = maps:size(OtherNodes) + Len + NodesCount,
-    % If the total number of nodes is at least K, stop the recursion.
-    case Len2 >= K_Bucket_Size of
-        true ->
-            % Stop searching once K nodes are reached.
-            OtherNodes2 = #{};
-        false ->
-            % Otherwise, keep searching further.
-            OtherNodes2 = lookup_for_k_nodes(RoutingTable, Len2, K_Bucket_Size, BranchID, K, I + 1)
-    end,
-    % Merge nodes from right and left branches.
-    Merge = merge_nodes_maps(NodesMap, OtherNodes),
-    Result = merge_nodes_maps(Merge, OtherNodes2),
-    Result;
+        % Look up nodes in the branch on the right (BranchID + I).
+        % I = 0, so first we look within the starting branch.
+        if 
+            BranchID + I =< K ->
+                NodesList = branch_lookup(RoutingTable, BranchID + I);
+            true -> 
+                NodesList = []
+        end,
+        % Get the size of NodesList.
+        Len = length(NodesList),
+        % Look up nodes in the branch on the left (BranchID - I).
+        if 
+            BranchID - I >= 0, Len < K_Bucket_Size, I > 0 ->
+                OtherNodes = branch_lookup(RoutingTable, BranchID - I);        
+            true -> 
+                OtherNodes = []
+        end,
+        % Calculate the total number of nodes from both sides.
+        Len2 = length(OtherNodes) + Len + NodesCount,
+        % If the total number of nodes is at least K, stop the recursion.
+        case Len2 >= K_Bucket_Size of
+            true ->
+                % Stop searching once K nodes are reached.
+                OtherNodes2 = [];
+            false ->
+                % Otherwise, keep searching further.
+                OtherNodes2 = lookup_for_k_nodes(RoutingTable, Len2, K_Bucket_Size, BranchID, K, I + 1)
+        end,
+        % Merge nodes from right and left branches.
+        Result = NodesList ++ OtherNodes ++ OtherNodes2,
+        Result;
 % Base case: When the number of nodes found is greater than or equal to K
 % or we've finished searching all relevant branches.
 lookup_for_k_nodes(_, NodesCount, K_Bucket_Size, BranchID, K, I) 
     when NodesCount >= K_Bucket_Size orelse BranchID + I > K, BranchID - I < 0  ->
-        % Return an empty map or result indicating no more nodes needed. 
-        #{}.
+        % Return an empty list or result indicating no more nodes needed. 
+        []
+.
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -168,12 +176,25 @@ lookup_for_k_nodes(_, NodesCount, K_Bucket_Size, BranchID, K, I)
 % This function is used to send synchronous requests to a node.
 % NodeId is the node to which the request is sent.
 send_request(NodePid, Request, Timeout) ->
-    gen_server:call(NodePid, Request, Timeout).
+    gen_server:call(NodePid, Request, Timeout)
+.
+
+% Handling synchronous requests to the node.
+% The sending node of the request is stored in the recipient's routing table.
+handle_call(Request, From, State) ->
+    % Extract the PID of the sender.
+    {SenderPid, _} = From,   
+    % Extract the routing table and other relevant state variables of the node.
+    {RoutingTable, _, K, _, Bucket_Size} = State, 
+    % Save the sender node in the routing table.
+    save_node(SenderPid, RoutingTable, K, Bucket_Size),
+    request_handler(Request, From, State)
+.
 
 % Handles a request to find the closest nodes to a given HashID.
 % HashID: The identifier of the target node.
 % State: The current state of the node, including the routing table.
-handle_call({find_node, HashID}, _, State) ->
+request_handler({find_node, HashID}, _From, State) ->
     % Extract the routing table and other relevant state variables of the node.
     {RoutingTable, _, K, _, Bucket_Size} = State,
     % Determine which branch of the routing table to search based on the target HashID.
@@ -194,24 +215,14 @@ handle_call({find_node, HashID}, _, State) ->
     % Reply to the caller with the list of closest nodes and the current state.
     {reply, {ok, K_NodeList}, State};
 % Handles the ping message sent to a node.
-handle_call(ping, From, State) ->
-    % Extract the PID of the sender.
-    {SenderPid, _} = From,
-    % Destructure the current state to access the routing table and configuration parameters.
-    {RoutingTable, _, K, _, Bucket_Size} = State,
-    % Save the sender node in the routing table.
-    save_node(SenderPid, RoutingTable, K, Bucket_Size),
+request_handler(ping, _From, State) ->
     % Reply with pong to indicate that the node is alive and reachable.
     {reply, pong, State};
-% handle_call({store, HashId}, _, State) ->
-%     {RoutingTable, _, K, _, Bucket_Size} = State,
-%     io:format("Storing node with hash id: ~p~n", [HashId]),
-%     Response = find_node(RoutingTable, HashId, Bucket_Size, K),
-%     {reply, {ok, Response}, State};
+    
 % Handles any unrecognized request by replying with an error.
-% State: The current state of the server.
-handle_call(_, _, State) ->
-    {reply, not_handled_request, State}.
+request_handler(_, _, State) ->
+    {reply, not_handled_request, State}
+.
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -220,17 +231,19 @@ handle_call(_, _, State) ->
 %%%                            %%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% 
 
-
-handle_cast({store, _}, _) ->
-    {ok, ok}.
-% handle_cast({save_node, NodePid}, State) ->
-%     {RoutingTable, _, K, _, _} = State,
-%     io:format("Saving node: ~p~n", [NodePid]),
-%     save_node(pid_to_list(NodePid), RoutingTable, K),
-%     {noreply, State}.
+% A node store a key/value pair in its own values table.
+% The node also saves the sender node in its routing table.
+handle_cast({store, Key, Value, SenderPid}, State) ->
+    {RoutingTable, ValuesTable, K, T, Bucket_Size} = State,
+    NewValuesTable = maps:put(Key, Value, ValuesTable),
+    NewState = {RoutingTable, NewValuesTable, K, T, Bucket_Size},
+    save_node(SenderPid, RoutingTable, K, Bucket_Size),
+    {noreply, NewState}
+.
 
 terminate(_Reason, _State) ->
-    ok.
+    ok
+.
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -251,15 +264,14 @@ iterate_find_node(RoutingTable, HashID, Bucket_Size, K) ->
     % Convert the node map to a list for processing.
     NodeList = utils:map_to_list(NodeMap),
     % Begin the recursive search to refine the closest node list.
-    iterate_find_node(HashID, Bucket_Size, K, NodeList, []).
-
+    iterate_find_node(HashID, Bucket_Size, K, NodeList, [])
+.
 % Base case: If there are no more nodes to contact, return the sorted list of the K 
 % closest nodes.
 iterate_find_node(HashID, _, K, [], ContactedNodes) -> 
     % Sort the contacted nodes by proximity to the HashID and return the top K nodes.
     SortedNodeList = utils:sort_node_list(ContactedNodes, HashID),
     lists:sublist(SortedNodeList, K);
-
 % Recursive case: Process the next node in the list of candidates.
 iterate_find_node(HashID, Bucket_Size, K, [{NodeHash, NodePid}|T], ContactedNodes) ->
     % Log the node being contacted for debugging purposes.
@@ -286,7 +298,8 @@ iterate_find_node(HashID, Bucket_Size, K, [{NodeHash, NodePid}|T], ContactedNode
         _ -> 
             Result = iterate_find_node(HashID, Bucket_Size, K, T, ContactedNodes)
     end,
-    Result.
+    Result
+.
 
 % Pings a specific node (NodePid) to check its availability.
 ping_node(NodePid) ->
@@ -303,8 +316,21 @@ ping_node(NodePid) ->
         % Handle any other unexpected error during the call.
         _: _ -> 
             {error, unknown}
-    end.
+    end
+.
 
+% Client-side function to store a key/value pair in the K nodes closest
+% to the hash_id of the pair.
+store_value(Key, Value, RoutingTable, K, Bucket_Size) ->
+    KeyHashId = utils:k_hash(Key, K),
+    NodeList = iterate_find_node(RoutingTable, Key, KeyHashId, Bucket_Size, K),
+    lists:foreach(
+        fun({_NodeHashId, NodePid}) ->
+            gen_server:cast(NodePid, {store, Key, Value, self()})
+        end,
+        NodeList
+    )
+.
 
 % % Function to join the network. If no nodes exist, the actor becomes the bootstrap node.
 % % Otherwise, it contacts the existing bootstrap node.

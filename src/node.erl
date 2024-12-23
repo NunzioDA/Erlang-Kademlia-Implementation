@@ -8,7 +8,7 @@
 -module(node).
 -behaviour(gen_server).
 -export([init/1, handle_call/3, handle_cast/2]).
--export([start/2, send_request/3, ping_node/1, store_value/5]).
+-export([start/2, send_request/3, ping_node/1, store_value/5, join/3, find_value/2, iterate_find_node/4]).
 
 % Starts a new node in the Kademlia network.
 % K -> Number of bits to represent a node ID.
@@ -91,12 +91,12 @@ save_node(NodePid, RoutingTable, K, K_Bucket_Size) ->
                         % If we get pong, the last node seen is still active,
                         % so we descard the new node and the last seen node
                         % is moved to the tail.
-                        pong -> 
+                        {pong, ok} -> 
                             UpdatedNodeList = Tail ++ [{LastSeenNodeHashId, LastSeenNodePid}], 
                             ets:insert(RoutingTable, {BranchID, UpdatedNodeList});
                         % If we receive a 'pang', the last seen node is no longer active, 
                         % so we eliminate it and the new node is moved to the tail.
-                        pang -> 
+                        {pang, _} -> 
                             UpdatedNodeList = Tail ++ [{NodeHashId, NodePid}],
                             ets:insert(RoutingTable, {BranchID, UpdatedNodeList})
                     end
@@ -114,18 +114,20 @@ branch_lookup(RoutingTable, BranchId) ->
     end
 .
 
-% This function is used to lookup for the K closest nodes starting from a branch.
-% After checking the branch, the function checks the branches on the left and on the right
+% This function is used to lookup for the K closest nodes starting from a branch in local.
+% After checking the current branch, the function checks the branches on the left and on the right
 % till it finds K nodes or the end of the routing table.
-% The function returns a list containing the K or more closest nodes.
-lookup_for_k_nodes(RoutingTable, K_Bucket_Size, BranchID, K) ->
-    % Start the recursive lookup from the initial state: 0 nodes found, initial index I=0.
-    lookup_for_k_nodes(RoutingTable, 0, K_Bucket_Size, BranchID, K, 0)
+% HashId is the target hash ID for which we are looking for the closest nodes.
+% The function returns a list containing the K closest nodes to HashId.
+lookup_for_k_nodes(RoutingTable, K_Bucket_Size, K, HashId) ->
+    BranchID = utils:get_subtree_index(HashId, my_hash_id(K)),
+    % Start the recursive lookup from the initial state: 0 nodes found, initial index I = 0.
+    lookup_for_k_nodes(RoutingTable, 0, K_Bucket_Size, BranchID, K, HashId, 0)
 .
 % Main function that recursively searches for K closest nodes. NodesCount is the number
 % of nodes collected so far. BranchID is the starting index for lookup. I is the current
 % step or offset in the lookup process.
-lookup_for_k_nodes(RoutingTable, NodesCount, K_Bucket_Size, BranchID, K, I) 
+lookup_for_k_nodes(RoutingTable, NodesCount, K_Bucket_Size, BranchID, K, HashId, I) 
     when BranchID + I =< K; BranchID - I >= 0 , NodesCount < K_Bucket_Size ->
         % Look up nodes in the branch on the right (BranchID + I).
         % I = 0, so first we look within the starting branch.
@@ -153,14 +155,25 @@ lookup_for_k_nodes(RoutingTable, NodesCount, K_Bucket_Size, BranchID, K, I)
                 OtherNodes2 = [];
             false ->
                 % Otherwise, keep searching further.
-                OtherNodes2 = lookup_for_k_nodes(RoutingTable, Len2, K_Bucket_Size, BranchID, K, I + 1)
+                OtherNodes2 = lookup_for_k_nodes(RoutingTable, Len2, K_Bucket_Size, BranchID, K, HashId, I + 1)
         end,
         % Merge nodes from right and left branches.
         Result = NodesList ++ OtherNodes ++ OtherNodes2,
-        Result;
+        % Sort the nodes by their distance to the target HashID.
+        SortedNodeList = utils:sort_node_list(Result, HashId),
+        % Select at most Bucket_Size nodes from the sorted list.
+        if 
+            length(SortedNodeList) > K_Bucket_Size -> 
+                % Truncate to K nodes if the list is too long.
+                K_NodeList = lists:sublist(SortedNodeList, K); 
+            true -> 
+                % Use the entire list if it's within the limit.
+                K_NodeList = SortedNodeList 
+        end,
+        K_NodeList;
 % Base case: When the number of nodes found is greater than or equal to K
 % or we've finished searching all relevant branches.
-lookup_for_k_nodes(_, NodesCount, K_Bucket_Size, BranchID, K, I) 
+lookup_for_k_nodes(_, NodesCount, K_Bucket_Size, BranchID, K, _, I) 
     when NodesCount >= K_Bucket_Size orelse BranchID + I > K, BranchID - I < 0  ->
         % Return an empty list or result indicating no more nodes needed. 
         []
@@ -190,35 +203,35 @@ handle_call(Request, From, State) ->
     save_node(SenderPid, RoutingTable, K, Bucket_Size),
     request_handler(Request, From, State)
 .
-
 % Handles a request to find the closest nodes to a given HashID.
 % HashID: The identifier of the target node.
 % State: The current state of the node, including the routing table.
 request_handler({find_node, HashID}, _From, State) ->
     % Extract the routing table and other relevant state variables of the node.
     {RoutingTable, _, K, _, Bucket_Size} = State,
-    % Determine which branch of the routing table to search based on the target HashID.
-    BranchID = utils:get_subtree_index(HashID, my_hash_id(K)),
     % Look up the closest K nodes within the routing table.
-    NodeList = lookup_for_k_nodes(RoutingTable, Bucket_Size, BranchID, K),
-    % Sort the nodes by their distance to the target HashID.
-    SortedNodeList = utils:sort_node_list(NodeList, HashID),
-    % Select at most Bucket_Size nodes from the sorted list.
-    if 
-        length(SortedNodeList) > Bucket_Size -> 
-            % Truncate to K nodes if the list is too long.
-            K_NodeList = lists:sublist(SortedNodeList, K); 
-        true -> 
-            % Use the entire list if it's within the limit.
-            K_NodeList = SortedNodeList 
-    end,
+    NodeList = lookup_for_k_nodes(RoutingTable, Bucket_Size, K, HashID),
     % Reply to the caller with the list of closest nodes and the current state.
-    {reply, {ok, K_NodeList}, State};
+    {reply, {ok, NodeList}, State};
+request_handler({find_value, Key}, _From, State) ->
+    % Extract the routing table and other relevant state variables of the node.
+    {RoutingTable, ValuesTable, K, _, Bucket_Size} = State,
+    case maps:member(Key, ValuesTable) of 
+        true -> 
+            % If the key is found in the local values table, return the value.
+            {reply, {ok, maps:get(Key, ValuesTable)}, State};
+        false ->
+            % Compute the hash ID of the key to search for.
+            KeyHashId = utils:k_hash(Key, K),
+            % If the key is not found, look up the closest K nodes to the key's hash ID.
+            NodeList = lookup_for_k_nodes(RoutingTable, Bucket_Size, K, KeyHashId),
+            % Reply with the list of closest nodes to the key.
+            {reply, {ok, NodeList}, State}
+    end;
 % Handles the ping message sent to a node.
 request_handler(ping, _From, State) ->
     % Reply with pong to indicate that the node is alive and reachable.
-    {reply, pong, State};
-    
+    {reply, {pong, ok}, State};
 % Handles any unrecognized request by replying with an error.
 request_handler(_, _, State) ->
     {reply, not_handled_request, State}
@@ -257,12 +270,8 @@ terminate(_Reason, _State) ->
 % The function starts by querying the local routing table for potential candidates.
 % It then iteratively contacts nodes to refine the list of closest nodes.
 iterate_find_node(RoutingTable, HashID, Bucket_Size, K) ->
-    % Determine the branch in the routing table corresponding to the HashID.
-    BranchID = utils:get_subtree_index(HashID, my_hash_id(K)),
     % Retrieve the initial list of closest nodes from the routing table.
-    NodeMap = lookup_for_k_nodes(RoutingTable, Bucket_Size, BranchID, K),
-    % Convert the node map to a list for processing.
-    NodeList = utils:map_to_list(NodeMap),
+    NodeList = lookup_for_k_nodes(RoutingTable, Bucket_Size, K, HashID),
     % Begin the recursive search to refine the closest node list.
     iterate_find_node(HashID, Bucket_Size, K, NodeList, [])
 .
@@ -301,6 +310,16 @@ iterate_find_node(HashID, Bucket_Size, K, [{NodeHash, NodePid}|T], ContactedNode
     Result
 .
 
+% Finds the value associated with a given key in the network.
+find_value(NodePid, Key) ->
+    case send_request(NodePid, {find_value, Key}, infinity) of
+        {ok, NodeList} when is_list(NodeList) -> 
+            NodeList;
+        {ok, Value} -> 
+            Value
+    end
+.
+
 % Pings a specific node (NodePid) to check its availability.
 ping_node(NodePid) ->
     Timeout = 500, 
@@ -309,13 +328,9 @@ ping_node(NodePid) ->
         % Returns pong.
         send_request(NodePid, ping, Timeout)
     catch
-        % Handle a timeout error, indicating the node did not respond in time.
-        exit:{timeout, _} -> 
-            io:format("Node ~p did not respond, returning 'pang'~n", [NodePid]),
-            pang; 
-        % Handle any other unexpected error during the call.
-        _: _ -> 
-            {error, unknown}
+        % If the node is unreachable, the function returns pang.
+        _:Reason -> 
+            {pang, Reason}
     end
 .
 
@@ -332,41 +347,41 @@ store_value(Key, Value, RoutingTable, K, Bucket_Size) ->
     )
 .
 
-% % Function to join the network. If no nodes exist, the actor becomes the bootstrap node.
-% % Otherwise, it contacts the existing bootstrap node.
-% join(RoutingTable, K) ->
-%     case whereis(bootstrap) of
-%         undefined -> 
-%             % No existing nodes, become the bootstrap node.
-%             register(bootstrap, self()),
-%             % Register this node as the bootstrap node in the global registry.
-%             % This way anyone knows the bootstrap and can join the network.
-%             io:format("Node with pid ~p is the bootstrap node!~n", [self()]),
-%             {bootstrap, self()};
-%         BootstrapPid -> 
-%             % The bootstrap node is saved within the routing table.
-%             save_node(BootstrapPid, RoutingTable, K),
-%             % Contact the existing bootstrap node to join the network
-%             io:format("~p is joining the network by contacting the existing bootstrap node (~p)~n", 
-%                 [self(), BootstrapPid]),
-%             MyHashId = my_hash_id(K),
-%             case send_request(BootstrapPid, {find_node, MyHashId}, infinity) of
-%                 {ok, Nodes} ->
-%                     % Nodes are saved in the routing table
-%                     lists:foreach(
-%                         fun({_, NodePid}) ->
-%                             save_node(NodePid, RoutingTable, K)
-%                         end, 
-%                         Nodes
-%                     ),
-%                     io:format("Successfully joined the network. Updated routing table with nodes: ~p~n", [Nodes]),
-%                     {ok, self()};
-%                 Error ->
-%                     io:format("Error while joining the network: ~p~n", [Error]),
-%                     {error, Error}
-%             end
-%     end 
-% .
+% Function to join the network. If no nodes exist, the actor becomes the bootstrap node.
+% Otherwise, it contacts the existing bootstrap node.
+join(RoutingTable, K, K_Bucket_Size) ->
+    case whereis(bootstrap) of
+        undefined -> 
+            % No existing nodes, become the bootstrap node.
+            register(bootstrap, self()),
+            % Register this node as the bootstrap node in the global registry.
+            % This way anyone knows the bootstrap and can join the network.
+            io:format("Node with pid ~p is the bootstrap node!~n", [self()]),
+            {bootstrap, self()};
+        BootstrapPid -> 
+            % The bootstrap node is saved within the routing table.
+            save_node(BootstrapPid, RoutingTable, K, K_Bucket_Size),
+            % Contact the existing bootstrap node to join the network
+            io:format("~p is joining the network by contacting the existing bootstrap node (~p)~n", 
+                [self(), BootstrapPid]),
+            MyHashId = my_hash_id(K),
+            case send_request(BootstrapPid, {find_node, MyHashId}, infinity) of
+                {ok, Nodes} ->
+                    % Nodes are saved in the routing table
+                    lists:foreach(
+                        fun({_, NodePid}) ->
+                            save_node(NodePid, RoutingTable, K, K_Bucket_Size)
+                        end, 
+                        Nodes
+                    ),
+                    io:format("Successfully joined the network. Updated routing table with nodes: ~p~n", [Nodes]),
+                    {ok, self()};
+                Error ->
+                    io:format("Error while joining the network: ~p~n", [Error]),
+                    {error, Error}
+            end
+    end 
+.
 
 
 

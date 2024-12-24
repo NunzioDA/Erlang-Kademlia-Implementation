@@ -6,7 +6,8 @@
 % -----------------------------------------------------------------------------
 
 - module(utils).
-- export([k_hash/2, get_subtree_index/2, xor_distance/2, sort_node_list/2, to_bit_list/1]).
+- export([k_hash/2, get_subtree_index/2, xor_distance/2, sort_node_list/2]).
+- export([to_bit_list/1, print_routing_table/2]).
 
 
 % This function is used to convert a bitstring into a list of bits.
@@ -70,4 +71,20 @@ sort_node_list(NodeList, TargetId) ->
             utils:xor_distance(TargetId, Key1) < utils:xor_distance(TargetId, Key2) 
         end, 
         NodeList
+    ).
+
+% Debugging function to print the routing table of the node.
+print_routing_table(RoutingTable, MyHash) ->
+    ets:tab2list(RoutingTable),
+    lists:foldl(
+        fun({BranchID, NodeList}, Acc) ->
+            if BranchID < bit_size(MyHash) ->
+                <<FirstBits:BranchID/bits, _/bits>> = MyHash;
+            true ->
+                FirstBits = MyHash
+            end,
+            Acc ++ [{utils:to_bit_list(FirstBits), NodeList}]
+        end,
+        [],
+        ets:tab2list(RoutingTable)
     ).

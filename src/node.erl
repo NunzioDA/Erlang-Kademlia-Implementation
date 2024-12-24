@@ -8,7 +8,7 @@
 -module(node).
 -behaviour(gen_server).
 -export([init/1, handle_call/3, handle_cast/2]).
--export([start/2, send_request/3, ping_node/1, store_value/5, join/3, find_value/2, iterate_find_node/4]).
+-export([start/2, send_request/3, ping_node/1, store_value/5, join/3, find_value/2, find_k_nearest_node/4]).
 
 % Starts a new node in the Kademlia network.
 % K -> Number of bits to represent a node ID.
@@ -119,15 +119,15 @@ branch_lookup(RoutingTable, BranchId) ->
 % till it finds K nodes or the end of the routing table.
 % HashId is the target hash ID for which we are looking for the closest nodes.
 % The function returns a list containing the K closest nodes to HashId.
-lookup_for_k_nodes(RoutingTable, K_Bucket_Size, K, HashId) ->
+find_node(RoutingTable, K_Bucket_Size, K, HashId) ->
     BranchID = utils:get_subtree_index(HashId, my_hash_id(K)),
     % Start the recursive lookup from the initial state: 0 nodes found, initial index I = 0.
-    lookup_for_k_nodes(RoutingTable, 0, K_Bucket_Size, BranchID, K, HashId, 0)
+    find_node(RoutingTable, 0, K_Bucket_Size, BranchID, K, HashId, 0)
 .
 % Main function that recursively searches for K closest nodes. NodesCount is the number
 % of nodes collected so far. BranchID is the starting index for lookup. I is the current
 % step or offset in the lookup process.
-lookup_for_k_nodes(RoutingTable, NodesCount, K_Bucket_Size, BranchID, K, HashId, I) 
+find_node(RoutingTable, NodesCount, K_Bucket_Size, BranchID, K, HashId, I) 
     when BranchID + I =< K; BranchID - I >= 0 , NodesCount < K_Bucket_Size ->
         % Look up nodes in the branch on the right (BranchID + I).
         % I = 0, so first we look within the starting branch.
@@ -155,7 +155,7 @@ lookup_for_k_nodes(RoutingTable, NodesCount, K_Bucket_Size, BranchID, K, HashId,
                 OtherNodes2 = [];
             false ->
                 % Otherwise, keep searching further.
-                OtherNodes2 = lookup_for_k_nodes(RoutingTable, Len2, K_Bucket_Size, BranchID, K, HashId, I + 1)
+                OtherNodes2 = find_node(RoutingTable, Len2, K_Bucket_Size, BranchID, K, HashId, I + 1)
         end,
         % Merge nodes from right and left branches.
         Result = NodesList ++ OtherNodes ++ OtherNodes2,
@@ -173,7 +173,7 @@ lookup_for_k_nodes(RoutingTable, NodesCount, K_Bucket_Size, BranchID, K, HashId,
         K_NodeList;
 % Base case: When the number of nodes found is greater than or equal to K
 % or we've finished searching all relevant branches.
-lookup_for_k_nodes(_, NodesCount, K_Bucket_Size, BranchID, K, _, I) 
+find_node(_, NodesCount, K_Bucket_Size, BranchID, K, _, I) 
     when NodesCount >= K_Bucket_Size orelse BranchID + I > K, BranchID - I < 0  ->
         % Return an empty list or result indicating no more nodes needed. 
         []
@@ -210,7 +210,7 @@ request_handler({find_node, HashID}, _From, State) ->
     % Extract the routing table and other relevant state variables of the node.
     {RoutingTable, _, K, _, Bucket_Size} = State,
     % Look up the closest K nodes within the routing table.
-    NodeList = lookup_for_k_nodes(RoutingTable, Bucket_Size, K, HashID),
+    NodeList = find_node(RoutingTable, Bucket_Size, K, HashID),
     % Reply to the caller with the list of closest nodes and the current state.
     {reply, {ok, NodeList}, State};
 request_handler({find_value, Key}, _From, State) ->
@@ -224,7 +224,7 @@ request_handler({find_value, Key}, _From, State) ->
             % Compute the hash ID of the key to search for.
             KeyHashId = utils:k_hash(Key, K),
             % If the key is not found, look up the closest K nodes to the key's hash ID.
-            NodeList = lookup_for_k_nodes(RoutingTable, Bucket_Size, K, KeyHashId),
+            NodeList = find_node(RoutingTable, Bucket_Size, K, KeyHashId),
             % Reply with the list of closest nodes to the key.
             {reply, {ok, NodeList}, State}
     end;
@@ -269,20 +269,20 @@ terminate(_Reason, _State) ->
 % Finds the K closest nodes in the network to a given HashID.
 % The function starts by querying the local routing table for potential candidates.
 % It then iteratively contacts nodes to refine the list of closest nodes.
-iterate_find_node(RoutingTable, HashID, Bucket_Size, K) ->
+find_k_nearest_node(RoutingTable, HashID, Bucket_Size, K) ->
     % Retrieve the initial list of closest nodes from the routing table.
-    NodeList = lookup_for_k_nodes(RoutingTable, Bucket_Size, K, HashID),
+    NodeList = find_node(RoutingTable, Bucket_Size, K, HashID),
     % Begin the recursive search to refine the closest node list.
-    iterate_find_node(HashID, Bucket_Size, K, NodeList, [])
+    find_k_nearest_node(HashID, Bucket_Size, K, NodeList, [])
 .
 % Base case: If there are no more nodes to contact, return the sorted list of the K 
 % closest nodes.
-iterate_find_node(HashID, _, K, [], ContactedNodes) -> 
+find_k_nearest_node(HashID, _, K, [], ContactedNodes) -> 
     % Sort the contacted nodes by proximity to the HashID and return the top K nodes.
     SortedNodeList = utils:sort_node_list(ContactedNodes, HashID),
     lists:sublist(SortedNodeList, K);
 % Recursive case: Process the next node in the list of candidates.
-iterate_find_node(HashID, Bucket_Size, K, [{NodeHash, NodePid}|T], ContactedNodes) ->
+find_k_nearest_node(HashID, Bucket_Size, K, [{NodeHash, NodePid}|T], ContactedNodes) ->
     % Log the node being contacted for debugging purposes.
     io:format("Contacting node: ~p~n", [NodePid]),
     % Send a request to the node to find its closest nodes to the HashID.
@@ -302,10 +302,10 @@ iterate_find_node(HashID, Bucket_Size, K, [{NodeHash, NodePid}|T], ContactedNode
             % Add the current node to the list of contacted nodes.
             NewContactedNodes = lists:append(ContactedNodes, [{NodeHash, NodePid}]),
             % Recursively continue searching with the updated lists.
-            Result = iterate_find_node(HashID, Bucket_Size, K, NewNodeList, NewContactedNodes);
+            Result = find_k_nearest_node(HashID, Bucket_Size, K, NewNodeList, NewContactedNodes);
         % If the request fails, skip the current node and continue with the rest.
         _ -> 
-            Result = iterate_find_node(HashID, Bucket_Size, K, T, ContactedNodes)
+            Result = find_k_nearest_node(HashID, Bucket_Size, K, T, ContactedNodes)
     end,
     Result
 .
@@ -338,7 +338,7 @@ ping_node(NodePid) ->
 % to the hash_id of the pair.
 store_value(Key, Value, RoutingTable, K, Bucket_Size) ->
     KeyHashId = utils:k_hash(Key, K),
-    NodeList = iterate_find_node(RoutingTable, Key, KeyHashId, Bucket_Size, K),
+    NodeList = find_k_nearest_node(RoutingTable, Key, KeyHashId, Bucket_Size, K),
     lists:foreach(
         fun({_NodeHashId, NodePid}) ->
             gen_server:cast(NodePid, {store, Key, Value, self()})

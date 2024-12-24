@@ -7,15 +7,17 @@
 
 -module(node).
 -behaviour(gen_server).
--export([init/1, handle_call/3, handle_cast/2]).
--export([start/2, send_request/3, ping_node/1, store_value/5, join/3, find_value/2, find_k_nearest_node/4]).
+-export([init/1, handle_call/3, handle_cast/2, terminate/2]).
+-export([start/2, send_request/2, ping_node/1, store_value/5, join/3, find_value/2, find_k_nearest_node/4, get_routing_table/1]).
+
 
 % Starts a new node in the Kademlia network.
 % K -> Number of bits to represent a node ID.
 % T -> Time interval for republishing data.
 % Returns the process identifier (PID) of the newly created node.
 start(K, T) ->
-    start_link(K, T)
+    Pid = start_link(K, T),
+    Pid
 .
 
 % Starts the node process.
@@ -30,16 +32,20 @@ start_link(K, T) ->
 % - RoutingTable: Used to store the routing information of the node.
 % - ValuesMap: Used to store key-value pairs managed by the node.
 init([K, T]) ->
+    save_address(self()),
     % Generate a unique integer to create distinct ETS table names for each node.
     UniqueInteger = integer_to_list(erlang:unique_integer([positive])),    
     % Create unique table name for routing by appending the unique integer.
     RoutingName = list_to_atom("routing_table" ++ UniqueInteger),
     % Initialize ETS table with the specified properties.
-    RoutingTable = ets:new(RoutingName, [set, private]),
+    RoutingTable = ets:new(RoutingName, [set, public]),
     % Initialize ValuesTable as an empty map.
     ValuesTable = #{},
     % Define the bucket size for routing table entries.
     Bucket_Size = 20,
+
+    join(RoutingTable, K, Bucket_Size),
+
     % Return the initialized state, containing ETS tables and configuration parameters.
     {ok, {RoutingTable, ValuesTable, K, T, Bucket_Size}}
 .
@@ -50,59 +56,88 @@ init([K, T]) ->
 %%%                     %%%  
 %%%%%%%%%%%%%%%%%%%%%%%%%%%
 
+start_thread(Function) ->
+    ParentAddress = my_address(),
+    spawn(
+        fun()->
+            save_address(ParentAddress),
+            Function()
+            end
+    ).
+
 % This function is used to get the hash id of the node starting from his pid.
 my_hash_id(K) ->
-    PidString = pid_to_list(self()),
+    PidString = pid_to_list(my_address()),
     utils:k_hash(PidString, K)
 .
 
 % Saves the information about a node into the routing table.
+% Save node is managed with a cast request so that it is not blocking
+% for the call handling functions or else it would cause a timeout.
+save_node(NodePid) -> 
+    gen_server:cast(my_address(), {save_node, NodePid}).
 % NodePid: The process identifier of the node to be saved. It is used to contact the node.
 % RoutingTable: the table where store the information.
 % K: The number of bits used for the node's hash_id representation.
-save_node(NodePid, RoutingTable, K, K_Bucket_Size) ->
-    % Compute the hash ID of the node to memorize starting from its pid.
+save_node(NodePid, RoutingTable, K, K_Bucket_Size) when is_pid(NodePid) ->
+    save_node(pid_to_list(NodePid), RoutingTable, K, K_Bucket_Size);
+save_node(NodePid, RoutingTable, K, K_Bucket_Size) when is_list(NodePid) ->
     NodeHashId = utils:k_hash(NodePid, K),
     % Determine the branch ID in the routing table corresponding to the hash ID.
     BranchID = utils:get_subtree_index(NodeHashId, my_hash_id(K)),
-    % Check if the branch ID already exists in the routing table.
-    case ets:lookup(RoutingTable, BranchID) of
-        % If the branch doesn't exist, create a new list for this branch.
-        [] -> 
-            % Insert the new node into a fresh list and store it in the table.
-            NewList = [{NodeHashId, NodePid}],
-            ets:insert(RoutingTable, {BranchID, NewList});  
-        % If the branch exists in the routing table, update the list of nodes
-        % in that branch.
-        [{BranchID, NodeList}] -> 
-            if
-                length(NodeList) < K_Bucket_Size ->
-                    % If there is space within the K_bucket, we can add the informations
-                    % about the new node without problems on the tail of the list.
-                    NewNodeList = NodeList ++ [{NodeHashId, NodePid}],
-                    % The routing table is a set, so the old list is overwritten by the
-                    %  new one.
-                    ets:insert(RoutingTable, {BranchID, NewNodeList});
-                % If the k_bucket size is full, we check whether the element at the top 
-                % of the list is still active.
-                length(NodeList) == K_Bucket_Size -> 
-                    [{LastSeenNodeHashId, LastSeenNodePid} | Tail] = NodeList,
-                    case ping_node(LastSeenNodePid) of 
-                        % If we get pong, the last node seen is still active,
-                        % so we descard the new node and the last seen node
-                        % is moved to the tail.
-                        {pong, ok} -> 
-                            UpdatedNodeList = Tail ++ [{LastSeenNodeHashId, LastSeenNodePid}], 
-                            ets:insert(RoutingTable, {BranchID, UpdatedNodeList});
-                        % If we receive a 'pang', the last seen node is no longer active, 
-                        % so we eliminate it and the new node is moved to the tail.
-                        {pang, _} -> 
-                            UpdatedNodeList = Tail ++ [{NodeHashId, NodePid}],
-                            ets:insert(RoutingTable, {BranchID, UpdatedNodeList})
+
+    % Checking if the new node is responsive.
+    case ping_node(NodePid) of
+        {pong, ok} ->
+            % Check if the branch ID already exists in the routing table.
+            case ets:lookup(RoutingTable, BranchID) of
+                % If the branch doesn't exist, create a new list for this branch.
+                [] -> 
+                    % Insert the new node into a fresh list and store it in the table.
+                    NewList = [{NodeHashId, NodePid}],
+                    ets:insert(RoutingTable, {BranchID, NewList});  
+                % If the branch exists in the routing table, update the list of nodes
+                % in that branch.
+                [{BranchID, NodeList}] -> 
+                    % Check if the node is already in the list.
+                    case lists:keyfind(NodeHashId, 1, NodeList) of
+                        {_,_} ->
+                            % If the node is already in the list, move it to the end
+                            RemovedNodeList = lists:filter(fun(Element) -> Element =/= {NodeHashId, NodePid}end, NodeList),
+                            NewNodeList = RemovedNodeList ++ [{NodeHashId, NodePid}],
+                            ets:insert(RoutingTable, {BranchID, NewNodeList});
+                        % If the node is not in the list, add it to the tail.
+                        false -> 
+                            % Check if the list is full or not.
+                            case length(NodeList) < K_Bucket_Size of
+                                % If the list is not full, add the new node to the tail.
+                                true -> 
+                                    NewNodeList = NodeList ++ [{NodeHashId, NodePid}],
+                                    ets:insert(RoutingTable, {BranchID, NewNodeList});
+                                % If the list is full, check the last node in the list.
+                                false -> 
+                                    % Extract the last node in the list.
+                                    [{LastSeenNodeHashId, LastSeenNodePid} | Tail] = NodeList,
+                                    % Check if the last node is still responsive.
+                                    case ping_node(LastSeenNodePid) of 
+                                        % If the last node is responsive, discard the new node.
+                                        {pong, ok} -> 
+                                            UpdatedNodeList = Tail ++ [{LastSeenNodeHashId, LastSeenNodePid}], 
+                                            ets:insert(RoutingTable, {BranchID, UpdatedNodeList});
+                                        % If the last node is not responsive, discard it and add the new node.
+                                        {pang, _} -> 
+                                            UpdatedNodeList = Tail ++ [{NodeHashId, NodePid}],
+                                            ets:insert(RoutingTable, {BranchID, UpdatedNodeList})
+                                    end
+                            end
                     end
-            end
-    end
-.
+            end;
+
+        {pang,_} ->
+            % io:format("The node ~p is not responing to ~p.~n", [NodePid, my_address()]),
+            ok
+    end.
+
 
 % This function is used to lookup for the nodes list in a branch.
 branch_lookup(RoutingTable, BranchId) ->
@@ -165,7 +200,7 @@ find_node(RoutingTable, NodesCount, K_Bucket_Size, BranchID, K, HashId, I)
         if 
             length(SortedNodeList) > K_Bucket_Size -> 
                 % Truncate to K nodes if the list is too long.
-                K_NodeList = lists:sublist(SortedNodeList, K); 
+                K_NodeList = lists:sublist(SortedNodeList, K_Bucket_Size); 
             true -> 
                 % Use the entire list if it's within the limit.
                 K_NodeList = SortedNodeList 
@@ -186,23 +221,14 @@ find_node(_, NodesCount, K_Bucket_Size, BranchID, K, _, I)
 %%%                            %%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% 
 
-% This function is used to send synchronous requests to a node.
-% NodeId is the node to which the request is sent.
-send_request(NodePid, Request, Timeout) ->
-    gen_server:call(NodePid, Request, Timeout)
-.
-
 % Handling synchronous requests to the node.
 % The sending node of the request is stored in the recipient's routing table.
-handle_call(Request, From, State) ->
-    % Extract the PID of the sender.
-    {SenderPid, _} = From,   
-    % Extract the routing table and other relevant state variables of the node.
-    {RoutingTable, _, K, _, Bucket_Size} = State, 
+handle_call({Request, SenderPid}, _, State) when Request /= ping ->  
     % Save the sender node in the routing table.
-    save_node(SenderPid, RoutingTable, K, Bucket_Size),
-    request_handler(Request, From, State)
-.
+    save_node(SenderPid),
+    request_handler(Request, SenderPid, State);
+handle_call({ping, SenderPid}, _, State) ->
+    request_handler(ping, SenderPid, State).
 % Handles a request to find the closest nodes to a given HashID.
 % HashID: The identifier of the target node.
 % State: The current state of the node, including the routing table.
@@ -228,10 +254,38 @@ request_handler({find_value, Key}, _From, State) ->
             % Reply with the list of closest nodes to the key.
             {reply, {ok, NodeList}, State}
     end;
+% This request is used during the join operation to fill the routing table of the new node.
+request_handler({fill_my_routing_table, FilledIndexes}, CLientPid, State) ->
+    {RoutingTable, _, K, _, Bucket_Size} = State,
+    % First the server finds all the branches that it shares with the client
+    % making the filling procedue more efficient.
+    ClientHash = utils:k_hash(pid_to_list(CLientPid), K),
+    <<Distance:K>> = utils:xor_distance(my_hash_id(K), ClientHash),
+
+    AllBranches = lists:seq(0, Distance),
+    % The server avoids to lookup for the branches that the client have already filled.
+    BranchesToLookup = lists:filter(fun(X) -> not lists:member(X, FilledIndexes) end, AllBranches),
+    Branches = lists:foldl(
+        fun(Branch, NodeList) ->
+            BranchContent = branch_lookup(RoutingTable, Branch),
+            NodeList ++ BranchContent
+        end,
+        [],
+        BranchesToLookup
+    ),
+    % The server returns the nearest nodes to the client that are next to be requested.
+    NearestNodes = find_node(RoutingTable, Bucket_Size, K, ClientHash),
+    Response = {ok, {Branches, NearestNodes}},
+    {reply, Response, State};
+
 % Handles the ping message sent to a node.
 request_handler(ping, _From, State) ->
     % Reply with pong to indicate that the node is alive and reachable.
     {reply, {pong, ok}, State};
+request_handler({routing_table}, _From, State) ->
+    {RoutingTable, _, K, _, _} = State,
+    Return = utils:print_routing_table(RoutingTable, my_hash_id(K)),
+    {reply, {ok, Return}, State};
 % Handles any unrecognized request by replying with an error.
 request_handler(_, _, State) ->
     {reply, not_handled_request, State}
@@ -244,17 +298,27 @@ request_handler(_, _, State) ->
 %%%                            %%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% 
 
+
+
+handle_cast({save_node, NodePid}, State) ->
+    {RoutingTable, _, K, _, Bucket_Size} = State,
+    save_node(NodePid, RoutingTable, K, Bucket_Size),
+    {noreply, State};
+handle_cast({Request, SenderPid}, State) when is_tuple(Request) ->
+    
+    save_node(SenderPid),
+    async_request_handler(Request, State).
 % A node store a key/value pair in its own values table.
 % The node also saves the sender node in its routing table.
-handle_cast({store, Key, Value, SenderPid}, State) ->
+async_request_handler({store, Key, Value}, State) ->
     {RoutingTable, ValuesTable, K, T, Bucket_Size} = State,
     NewValuesTable = maps:put(Key, Value, ValuesTable),
     NewState = {RoutingTable, NewValuesTable, K, T, Bucket_Size},
-    save_node(SenderPid, RoutingTable, K, Bucket_Size),
     {noreply, NewState}
 .
 
 terminate(_Reason, _State) ->
+    io:format("Node ~p is terminating.~n", [my_address()]),
     ok
 .
 
@@ -265,6 +329,30 @@ terminate(_Reason, _State) ->
 %%%                            %%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
+my_address() ->
+    get(my_address).
+
+save_address(Address) ->
+    put(my_address, Address).
+
+get_routing_table(NodePid) ->
+    gen_server:call(NodePid, {{routing_table}, self()}, 10).
+
+% This function is used to send synchronous requests to a node.
+% NodeId is the node to which the request is sent.
+send_request(NodePid, Request) when is_list(NodePid) ->
+    send_request(list_to_pid(NodePid), Request);
+send_request(NodePid, Request) when is_pid(NodePid) ->
+    
+    try
+        gen_server:call(NodePid, {Request, my_address()}, 5000)
+    catch _:Reason ->
+        {error,Reason}
+    end
+.
+
+send_async_request(NodePid, Request) ->
+    gen_server:cast(NodePid, {Request,my_address()}).
 
 % Finds the K closest nodes in the network to a given HashID.
 % The function starts by querying the local routing table for potential candidates.
@@ -288,12 +376,12 @@ find_k_nearest_node(HashID, Bucket_Size, K, [{NodeHash, NodePid}|T], ContactedNo
     % Send a request to the node to find its closest nodes to the HashID.
     case gen_server:call(list_to_pid(NodePid), {find_node, HashID}) of
         {ok, NodeList} ->
-            % Filter the returned node list to exclude nodes already contacted or self.
+            % Filter the returned node list to exclude nodes already contacted or my_address.
             FilteredNodeList = lists:filter(
                 fun(Node) -> 
                     {_, FilterPid} = Node,
                     not lists:member(Node, ContactedNodes) andalso
-                    FilterPid /= pid_to_list(self())
+                    FilterPid /= pid_to_list(my_address())
                 end, 
                 NodeList
             ),
@@ -312,7 +400,7 @@ find_k_nearest_node(HashID, Bucket_Size, K, [{NodeHash, NodePid}|T], ContactedNo
 
 % Finds the value associated with a given key in the network.
 find_value(NodePid, Key) ->
-    case send_request(NodePid, {find_value, Key}, infinity) of
+    case send_request(NodePid, {find_value, Key}) of
         {ok, NodeList} when is_list(NodeList) -> 
             NodeList;
         {ok, Value} -> 
@@ -321,15 +409,14 @@ find_value(NodePid, Key) ->
 .
 
 % Pings a specific node (NodePid) to check its availability.
-ping_node(NodePid) ->
-    Timeout = 500, 
-    try 
-        % Send a synchronous call to the node with the message ping and the defined timeout.
-        % Returns pong.
-        send_request(NodePid, ping, Timeout)
-    catch
+ping_node(NodePid) when is_list(NodePid) -> 
+    ping_node(list_to_pid(NodePid));
+ping_node(NodePid) when is_pid(NodePid) ->
+    case send_request(NodePid, ping) of
+        {pong,ok} ->
+            {pong,ok};
         % If the node is unreachable, the function returns pang.
-        _:Reason -> 
+        {error, Reason} -> 
             {pang, Reason}
     end
 .
@@ -341,11 +428,13 @@ store_value(Key, Value, RoutingTable, K, Bucket_Size) ->
     NodeList = find_k_nearest_node(RoutingTable, Key, KeyHashId, Bucket_Size, K),
     lists:foreach(
         fun({_NodeHashId, NodePid}) ->
-            gen_server:cast(NodePid, {store, Key, Value, self()})
+            send_async_request(NodePid, {store, Key, Value})
         end,
         NodeList
     )
 .
+
+
 
 % Function to join the network. If no nodes exist, the actor becomes the bootstrap node.
 % Otherwise, it contacts the existing bootstrap node.
@@ -353,37 +442,61 @@ join(RoutingTable, K, K_Bucket_Size) ->
     case whereis(bootstrap) of
         undefined -> 
             % No existing nodes, become the bootstrap node.
-            register(bootstrap, self()),
+            register(bootstrap, my_address()),
             % Register this node as the bootstrap node in the global registry.
             % This way anyone knows the bootstrap and can join the network.
-            io:format("Node with pid ~p is the bootstrap node!~n", [self()]),
-            {bootstrap, self()};
+            io:format("Node with pid ~p is the bootstrap node!~n", [my_address()]),
+            {bootstrap, my_address()};
         BootstrapPid -> 
-            % The bootstrap node is saved within the routing table.
-            save_node(BootstrapPid, RoutingTable, K, K_Bucket_Size),
             % Contact the existing bootstrap node to join the network
             io:format("~p is joining the network by contacting the existing bootstrap node (~p)~n", 
-                [self(), BootstrapPid]),
-            MyHashId = my_hash_id(K),
-            case send_request(BootstrapPid, {find_node, MyHashId}, infinity) of
-                {ok, Nodes} ->
-                    % Nodes are saved in the routing table
-                    lists:foreach(
-                        fun({_, NodePid}) ->
-                            save_node(NodePid, RoutingTable, K, K_Bucket_Size)
-                        end, 
-                        Nodes
-                    ),
-                    io:format("Successfully joined the network. Updated routing table with nodes: ~p~n", [Nodes]),
-                    {ok, self()};
-                Error ->
-                    io:format("Error while joining the network: ~p~n", [Error]),
-                    {error, Error}
-            end
+                [my_address(), BootstrapPid]),
+            % Starting a new process to join the network.
+            start_thread(
+                fun() -> 
+                    BootstrapHash = utils:k_hash(pid_to_list(BootstrapPid), K),
+                    join_procedure([{BootstrapHash, BootstrapPid}], RoutingTable, K, K_Bucket_Size, [])
+                end
+            )
     end 
 .
+join_procedure(ContactList, RoutingTable, K, K_Bucket_Size, ContactedNodes) ->
+    case ContactList of
+        [] -> 
+            {ok, my_address()};
+        [{_,NodePid} | T] -> 
+            save_node(NodePid),
+            Tab2List = ets:tab2list(RoutingTable),
+            FilledBrances = lists:foldl(
+                fun({BranchID, _}, Acc) ->
+                    case ets:lookup(RoutingTable, BranchID) of
+                        [] -> Acc;
+                        _ -> [BranchID | Acc]
+                    end
+                end,
+                [],
+                Tab2List
+            ),
+            case send_request(NodePid, {fill_my_routing_table, FilledBrances}) of
+                {ok, {Branches, NearestNodes}} -> 
+                    lists:foreach(
+                        fun({_, NewNode}) ->
+                            save_node(NewNode)
+                        end,
+                        Branches
+                    ),
+                    NewContactList = T ++ NearestNodes,
+                    Filtered = lists:filter(fun(Element)-> not lists:member(Element, ContactedNodes) end, NewContactList),
+                    io:format("Cont ~p", [Filtered]),
+                    SortedContactList = utils:sort_node_list(Filtered, my_hash_id(K)),
+                    K_NearestNodes = lists:sublist(SortedContactList, K_Bucket_Size),
 
-
+                    join_procedure(K_NearestNodes, RoutingTable, K, K_Bucket_Size, [NodePid|ContactedNodes]);
+                Error -> 
+                    io:format("CC ~p",[Error]),
+                    {error, Error}
+            end
+    end.
 
 
 

@@ -75,11 +75,17 @@ my_hash_id(K) ->
 % Save node is managed with a cast request so that it is not blocking
 % for the call handling functions or else it would cause a timeout.
 save_node(NodePid) -> 
-    ShellPid = whereis(shellPid),
-    if NodePid /= ShellPid, NodePid /= undefined ->
-        gen_server:cast(my_address(), {save_node, NodePid});
-    true -> io:format("ShellCommand")
-    end.
+    MyPid = my_address(),
+    StringPid = pid_to_list(MyPid),
+    if NodePid /= MyPid, NodePid /= StringPid ->
+        ShellPid = whereis(shellPid),
+        if NodePid /= ShellPid, NodePid /= undefined ->
+            gen_server:cast(my_address(), {save_node, NodePid});
+        true -> {ignored_node, "Shell pid passed"}
+        end;
+    true -> {ignored_node, "Can't save my pid"}
+    end
+.
 % NodePid: The process identifier of the node to be saved. It is used to contact the node.
 % RoutingTable: the table where store the information.
 % K: The number of bits used for the node's hash_id representation.
@@ -255,11 +261,11 @@ request_handler({find_value, Key}, _From, State) ->
             {reply, {ok, NodeList}, State}
     end;
 % This request is used during the join operation to fill the routing table of the new node.
-request_handler({fill_my_routing_table, FilledIndexes}, CLientPid, State) ->
+request_handler({fill_my_routing_table, FilledIndexes}, ClientPid, State) ->
     {RoutingTable, _, K, _, Bucket_Size} = State,
     % First the server finds all the branches that it shares with the client
     % making the filling procedue more efficient.
-    ClientHash = utils:k_hash(pid_to_list(CLientPid), K),
+    ClientHash = utils:k_hash(pid_to_list(ClientPid), K),
     SubTreeIndex = utils:get_subtree_index(my_hash_id(K), ClientHash),
 
     AllBranches = lists:seq(0, SubTreeIndex),
@@ -357,7 +363,7 @@ send_request(NodePid, Request) when is_pid(NodePid) ->
 .
 
 send_async_request(NodePid, Request) ->
-    gen_server:cast(NodePid, {Request,my_address()}).
+    gen_server:cast(NodePid, {Request, my_address()}).
 
 % Finds the K closest nodes in the network to a given HashID.
 % The function starts by querying the local routing table for potential candidates.

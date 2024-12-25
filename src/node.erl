@@ -65,10 +65,12 @@ start_thread(Function) ->
     Verbose = utils:verbose(),
     spawn(
         fun()->
+            % Saving parent address and verbose in the new process
+            % so it can behave like the parent
             set_verbose(Verbose),
             save_address(ParentAddress),
             Function()
-            end
+        end
     ).
 
 % This function is used to get the hash id of the node starting from his pid.
@@ -83,9 +85,13 @@ my_hash_id(K) ->
 save_node(NodePid) -> 
     MyPid = my_address(),
     StringPid = pid_to_list(MyPid),
+
+    % Save node avoids saving its own pid or the shell pid 
     if NodePid /= MyPid, NodePid /= StringPid ->
         ShellPid = whereis(shellPid),
         if NodePid /= ShellPid, NodePid /= undefined ->
+            % gen_server:cast is used so save_node is not blocking
+            % send_async_request is not used because save_node is handled separately
             gen_server:cast(my_address(), {save_node, NodePid});
         true -> {ignored_node, "Shell pid passed"}
         end;
@@ -311,12 +317,12 @@ request_handler(_, _, State) ->
 %%%                            %%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% 
 
-
-
+% When a save_node request is received save_node is called
 handle_cast({save_node, NodePid}, State) ->
     {RoutingTable, _, K, _, Bucket_Size} = State,
     save_node(NodePid, RoutingTable, K, Bucket_Size),
     {noreply, State};
+
 handle_cast({Request, SenderPid}, State) when is_tuple(Request) ->
     
     save_node(SenderPid),
@@ -342,18 +348,26 @@ terminate(_Reason, _State) ->
 %%%                            %%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
+% This function saves the node address (Pid) in the process 
+% dictionary so that the process and all his subprocesses can
+% use the same address
+save_address(Address) ->
+    put(my_address, Address).
+% This function gets the process address
 my_address() ->
     get(my_address).
 
-save_address(Address) ->
-    put(my_address, Address).
-
+% Verbose is used to decide if the debugPrint function
+% should print the text or not 
 set_verbose(Verbose) ->
     put(verbose, Verbose).
 
+% This function is used for debugging purposess
+% allowing to print the routing table in the shell
+% sending a routing_table request to the given Pid
 get_routing_table(NodePid) ->
     try
-        gen_server:call(NodePid, {routing_table}, 500000)
+        gen_server:call(NodePid, {routing_table}, 50000)
     catch 
         Err -> utils:debugPrint("~p",[Err])
     end.
@@ -371,6 +385,8 @@ send_request(NodePid, Request) when is_pid(NodePid) ->
     end
 .
 
+% This function is used to send asynchronous requests to a node.
+% NodeId is the node to which the request is sent.
 send_async_request(NodePid, Request) ->
     gen_server:cast(NodePid, {Request, my_address()}).
 
@@ -455,7 +471,6 @@ store_value(Key, Value, RoutingTable, K, Bucket_Size) ->
 .
 
 
-
 % Function to join the network. If no nodes exist, the actor becomes the bootstrap node.
 % Otherwise, it contacts the existing bootstrap node.
 join(RoutingTable, K, K_Bucket_Size) ->
@@ -481,6 +496,9 @@ join(RoutingTable, K, K_Bucket_Size) ->
     end 
 .
 
+% This function starts the join procedure.
+% If at the end of the procedure there are still empty 
+% branches the procedure is restarted after 2000 millis.
 join_procedure_starter(NodesList, RoutingTable, K, K_Bucket_Size)->
     join_procedure(NodesList, RoutingTable, K, K_Bucket_Size, [])
 

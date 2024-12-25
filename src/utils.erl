@@ -6,7 +6,7 @@
 % -----------------------------------------------------------------------------
 
 - module(utils).
-- export([k_hash/2, get_subtree_index/2, xor_distance/2, sort_node_list/2]).
+- export([k_hash/2, get_subtree_index/2, xor_distance/2, sort_node_list/2, empty_branches/2]).
 - export([to_bit_list/1, print_routing_table/2]).
 
 
@@ -72,6 +72,11 @@ sort_node_list(NodeList, TargetId) ->
         end, 
         NodeList
     ).
+
+% 
+empty_branches(RoutingTable, K) ->
+    Tab2List = ets:tab2list(RoutingTable),
+    length(Tab2List) < K.
 
 % Debugging function to print the routing table of the node.
 print_routing_table(RoutingTable, MyHash) ->

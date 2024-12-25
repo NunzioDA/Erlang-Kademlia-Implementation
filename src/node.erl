@@ -460,44 +460,43 @@ join(RoutingTable, K, K_Bucket_Size) ->
             )
     end 
 .
-join_procedure(ContactList, RoutingTable, K, K_Bucket_Size, ContactedNodes) ->
-    case ContactList of
-        [] -> 
-            {ok, my_address()};
-        [{_,NodePid} | T] -> 
-            save_node(NodePid),
-            Tab2List = ets:tab2list(RoutingTable),
-            FilledBrances = lists:foldl(
-                fun({BranchID, _}, Acc) ->
-                    case ets:lookup(RoutingTable, BranchID) of
-                        [] -> Acc;
-                        _ -> [BranchID | Acc]
-                    end
-                end,
-                [],
-                Tab2List
-            ),
-            case send_request(NodePid, {fill_my_routing_table, FilledBrances}) of
-                {ok, {Branches, NearestNodes}} -> 
-                    lists:foreach(
-                        fun({_, NewNode}) ->
-                            save_node(NewNode)
-                        end,
-                        Branches
-                    ),
-                    NewContactList = T ++ NearestNodes,
-                    Filtered = lists:filter(fun(Element)-> not lists:member(Element, ContactedNodes) end, NewContactList),
-                    io:format("Cont ~p", [Filtered]),
-                    SortedContactList = utils:sort_node_list(Filtered, my_hash_id(K)),
-                    K_NearestNodes = lists:sublist(SortedContactList, K_Bucket_Size),
+join_procedure([], _,_,_,_) ->
+    ok;
+join_procedure([{_,NodePid} | T], RoutingTable, K, K_Bucket_Size, ContactedNodes) ->
 
-                    join_procedure(K_NearestNodes, RoutingTable, K, K_Bucket_Size, [NodePid|ContactedNodes]);
-                Error -> 
-                    io:format("CC ~p",[Error]),
-                    {error, Error}
+    save_node(NodePid),
+    Tab2List = ets:tab2list(RoutingTable),
+    FilledBrances = lists:foldl(
+        fun({BranchID, _}, Acc) ->
+            case ets:lookup(RoutingTable, BranchID) of
+                [] -> Acc;
+                _ -> [BranchID | Acc]
             end
-    end.
+        end,
+        [],
+        Tab2List
+    ),
+    case send_request(NodePid, {fill_my_routing_table, FilledBrances}) of
+        {ok, {Branches, NearestNodes}} -> 
+            lists:foreach(
+                fun({_, NewNode}) ->
+                    save_node(NewNode)
+                end,
+                Branches
+            ),
 
+            FilteredNearestNodes = lists:filter(fun({_,Element})-> not lists:member(Element, ContactedNodes) end, NearestNodes),
+            NewContactList = T ++ FilteredNearestNodes,
+
+            
+            SortedContactList = utils:sort_node_list(NewContactList, my_hash_id(K)),
+            K_NearestNodes = lists:sublist(SortedContactList, K_Bucket_Size),
+            io:format("Cont ~p", [K_NearestNodes]),
+
+            join_procedure(K_NearestNodes, RoutingTable, K, K_Bucket_Size, [NodePid|ContactedNodes]);
+        Error -> 
+            {error, Error}
+    end.
 
 
 

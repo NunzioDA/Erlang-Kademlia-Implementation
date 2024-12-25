@@ -31,13 +31,6 @@ k_hash(Data, K) when is_integer(K), K > 0 ->
     KBits.
 
 
-% debug() ->
-%     Start = erlang:monotonic_time(),
-%     lists:foreach(fun(_) -> get_subtree_index(<<257:256>>, <<1:256>>) end, lists:seq(1, 100000)),
-%     End = erlang:monotonic_time(),
-%     Duration = End - Start,
-%     io:format("Execution time: ~p microseconds~n", [Duration]).
-
 % This function is used to get the index of the subtree that contains the target id.
 get_subtree_index(Binary1, Binary2) ->
     Xor = xor_distance(Binary1, Binary2),

@@ -8,7 +8,7 @@
 -module(node).
 -behaviour(gen_server).
 -export([init/1, handle_call/3, handle_cast/2, terminate/2]).
--export([start/2, send_request/2, ping_node/1, store_value/5, join/3, find_value/2, find_k_nearest_node/4, get_routing_table/1]).
+-export([start/2, start/3, send_request/2, ping_node/1, store_value/5, join/3, find_value/2, find_k_nearest_node/4, get_routing_table/1]).
 
 
 % Starts a new node in the Kademlia network.
@@ -16,14 +16,17 @@
 % T -> Time interval for republishing data.
 % Returns the process identifier (PID) of the newly created node.
 start(K, T) ->
-    Pid = start_link(K, T),
+    start(K, T, false)
+.
+start(K, T, Verbose) ->
+    Pid = start_link(K, T, Verbose),
     Pid
 .
 
 % Starts the node process.
 % gen_server:start_link/3 calls init/1, who takes in input [K, T].
-start_link(K, T) ->
-    {ok, Pid} = gen_server:start_link(?MODULE, [K, T], []),
+start_link(K, T, Verbose) ->
+    {ok, Pid} = gen_server:start_link(?MODULE, [K, T, Verbose], []),
     Pid
 .
 
@@ -31,8 +34,9 @@ start_link(K, T) ->
 % Creates one ETS table and a map:
 % - RoutingTable: Used to store the routing information of the node.
 % - ValuesMap: Used to store key-value pairs managed by the node.
-init([K, T]) ->
+init([K, T, Verbose]) ->
     save_address(self()),
+    set_verbose(Verbose),
     % Generate a unique integer to create distinct ETS table names for each node.
     UniqueInteger = integer_to_list(erlang:unique_integer([positive])),    
     % Create unique table name for routing by appending the unique integer.
@@ -58,8 +62,10 @@ init([K, T]) ->
 
 start_thread(Function) ->
     ParentAddress = my_address(),
+    Verbose = utils:verbose(),
     spawn(
         fun()->
+            set_verbose(Verbose),
             save_address(ParentAddress),
             Function()
             end
@@ -325,7 +331,7 @@ async_request_handler({store, Key, Value}, State) ->
 .
 
 terminate(_Reason, _State) ->
-    io:format("Node ~p is terminating.~n", [my_address()]),
+    utils:debugPrint("Node ~p is terminating.~n", [my_address()]),
     ok
 .
 
@@ -342,11 +348,14 @@ my_address() ->
 save_address(Address) ->
     put(my_address, Address).
 
+set_verbose(Verbose) ->
+    put(verbose, Verbose).
+
 get_routing_table(NodePid) ->
     try
         gen_server:call(NodePid, {routing_table}, 500000)
     catch 
-        Err -> io:format("~p",[Err])
+        Err -> utils:debugPrint("~p",[Err])
     end.
 
 % This function is used to send synchronous requests to a node.
@@ -383,7 +392,7 @@ find_k_nearest_node(HashID, _, K, [], ContactedNodes) ->
 % Recursive case: Process the next node in the list of candidates.
 find_k_nearest_node(HashID, Bucket_Size, K, [{NodeHash, NodePid}|T], ContactedNodes) ->
     % Log the node being contacted for debugging purposes.
-    io:format("Contacting node: ~p~n", [NodePid]),
+    utils:debugPrint("Contacting node: ~p~n", [NodePid]),
     % Send a request to the node to find its closest nodes to the HashID.
     case send_request(NodePid, {find_node, HashID}) of
         {ok, NodeList} ->
@@ -456,11 +465,11 @@ join(RoutingTable, K, K_Bucket_Size) ->
             register(bootstrap, my_address()),
             % Register this node as the bootstrap node in the global registry.
             % This way anyone knows the bootstrap and can join the network.
-            io:format("Node with pid ~p is the bootstrap node!~n", [my_address()]),
+            utils:debugPrint("Node with pid ~p is the bootstrap node!~n", [my_address()]),
             {bootstrap, my_address()};
         BootstrapPid -> 
             % Contact the existing bootstrap node to join the network
-            io:format("~p is joining the network by contacting the existing bootstrap node (~p)~n", 
+            utils:debugPrint("~p is joining the network by contacting the existing bootstrap node (~p)~n", 
                 [my_address(), BootstrapPid]),
             % Starting a new process to join the network.
             start_thread(
@@ -509,7 +518,7 @@ join_procedure([{_,NodePid} | T], RoutingTable, K, K_Bucket_Size, ContactedNodes
                 end,
                 Branches ++ NearestNodes
             ),
-            io:format("Nearest List ~p to ~p~n", [NearestNodes, my_address()]),
+            utils:debugPrint("Nearest List ~p to ~p~n", [NearestNodes, my_address()]),
             NewContactList = NearestNodes ++ T,
 
             FilteredNearestNodes = lists:foldl(fun(Element, Acc) ->
@@ -523,7 +532,7 @@ join_procedure([{_,NodePid} | T], RoutingTable, K, K_Bucket_Size, ContactedNodes
             
             SortedContactList = utils:sort_node_list(FilteredNearestNodes, my_hash_id(K)),
             K_NearestNodes = lists:sublist(SortedContactList, K_Bucket_Size),
-            % io:format("Cont ~p", [K_NearestNodes]),
+            % utils:debugPrint("Cont ~p", [K_NearestNodes]),
 
             join_procedure(K_NearestNodes, RoutingTable, K, K_Bucket_Size, [NodePid|ContactedNodes]);
         Error -> 

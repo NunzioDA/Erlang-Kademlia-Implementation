@@ -18,7 +18,7 @@ debug_find_node(N) ->
     
     lists:foreach(
         fun(_) ->
-            node:start(5, 4)
+            node:start(5, 4, true)
         end,
         lists:seq(0,N)
     ).

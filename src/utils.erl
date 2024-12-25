@@ -7,7 +7,7 @@
 
 - module(utils).
 - export([k_hash/2, get_subtree_index/2, xor_distance/2, sort_node_list/2, empty_branches/2]).
-- export([to_bit_list/1, print_routing_table/2]).
+- export([to_bit_list/1, print_routing_table/2, debugPrint/1, debugPrint/2, verbose/0]).
 
 
 % This function is used to convert a bitstring into a list of bits.
@@ -93,3 +93,26 @@ print_routing_table(RoutingTable, MyHash) ->
         [],
         ets:tab2list(RoutingTable)
     ).
+
+verbose() ->
+    Result = get(verbose),
+    if Result /= undefined ->
+        Result;
+    true ->
+        false
+    end.
+
+%
+debugPrint(Format)->
+    Verbose = verbose(),
+    
+    if Verbose ->
+        io:format(Format);
+    true -> ok
+    end.
+debugPrint(Format, Data)->
+    Verbose = verbose(),
+    if Verbose ->
+        io:format(Format, Data);
+    true -> ok
+    end.

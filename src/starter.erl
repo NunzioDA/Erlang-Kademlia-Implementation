@@ -7,23 +7,21 @@
 
 - module(starter).
 
-- export([start/0]).
+- export([start/1]).
 - import(node, [talk/0]).
 
-start() -> 
-    debug_find_node().
+start(N) -> 
+    register(shellPid, self()),
+    debug_find_node(N).
 
-debug_find_node() ->
-    PID = node:start(5, 4),
-    PID1 = node:start(5, 4),
-    PID2 = node:start(5, 4),
-    PID3 = node:start(5, 4),
-    PID4 = node:start(5, 4),
-    gen_server:cast(PID,{save_node, PID1}),
-    gen_server:cast(PID,{save_node, PID2}),
-    gen_server:cast(PID2,{save_node, PID3}),
-    gen_server:cast(PID3,{save_node, PID4}),
-    node:send_request(PID,{store, utils:k_hash("5", 5)}).
+debug_find_node(N) ->
+    
+    lists:foreach(
+        fun(_) ->
+            node:start(5, 4)
+        end,
+        lists:seq(0,N)
+    ).
 
 % quit() ->
     % SystemPids = [self(), group_leader()],

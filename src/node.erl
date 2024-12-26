@@ -512,13 +512,17 @@ join_procedure_starter(NodesList, RoutingTable, K, K_Bucket_Size)->
     end
 .
 
+% The join procedure allows the node to join the network by contacting other nodes
+% and exchanging routing data to fill its routing table.
 join_procedure([], _,_,_,_) ->
     ok;
 join_procedure([{_,NodePid} | T], RoutingTable, K, K_Bucket_Size, ContactedNodes) ->
-
+    % The first node is saved
     save_node(NodePid),
+
+    % Saving the branches that already have at least one element
     Tab2List = ets:tab2list(RoutingTable),
-    FilledBrances = lists:foldl(
+    FilledBranches = lists:foldl(
         fun({BranchID, List}, Acc) ->
             case List of
                 [] -> Acc;
@@ -528,8 +532,18 @@ join_procedure([{_,NodePid} | T], RoutingTable, K, K_Bucket_Size, ContactedNodes
         [],
         Tab2List
     ),
-    case send_request(NodePid, {fill_my_routing_table, FilledBrances}) of
+
+    % Sending request to the saved node, asking for new nodes.
+    % This request will return the nodes in the opposite branches
+    % relative to each consecutive shared bit in the head of the hash id.
+    % The nearest nodes to the sender node are also returned. 
+    % These will be the next nodes to contact because they share most of 
+    % the branches with the sender.
+    % The variable FilledBranches contains the branches that are already filled, 
+    % allowing the receiver to ignore them and return only what's needed.
+    case send_request(NodePid, {fill_my_routing_table, FilledBranches}) of
         {ok, {Branches, NearestNodes}} -> 
+            % saving all the new nodes
             lists:foreach(
                 fun({_, NewNode}) ->
                     save_node(NewNode)
@@ -539,6 +553,7 @@ join_procedure([{_,NodePid} | T], RoutingTable, K, K_Bucket_Size, ContactedNodes
             % utils:debugPrint("Nearest List ~p to ~p~n", [NearestNodes, my_address()]),
             NewContactList = NearestNodes ++ T,
 
+            % Filtering out nodes that have already been contacted and removing duplicates.
             FilteredNearestNodes = lists:foldl(fun(Element, Acc) ->
                 {_,Pid} = Element,
                 Condition = lists:member(Element, Acc) orelse lists:member(Pid, ContactedNodes),
@@ -548,6 +563,7 @@ join_procedure([{_,NodePid} | T], RoutingTable, K, K_Bucket_Size, ContactedNodes
                 end
             end, [], NewContactList),
             
+            % Sorting new nodes
             SortedContactList = utils:sort_node_list(FilteredNearestNodes, my_hash_id(K)),
             K_NearestNodes = lists:sublist(SortedContactList, K_Bucket_Size),
 

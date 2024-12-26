@@ -11,14 +11,21 @@
 - import(node, [talk/0]).
 
 start(N) -> 
-    register(shellPid, self()),
+    registerShell(),
     debug_find_node(N).
+
+registerShell() ->
+    ShellPid = whereis(shellPid),
+    if(ShellPid /= undefined) ->
+        register(shellPid, self());
+    true->ok
+    end.
 
 debug_find_node(N) ->
     
     lists:foreach(
         fun(_) ->
-            node:start(5, 4, true)
+            node:start(5, 4, false)
         end,
         lists:seq(0,N)
     ).

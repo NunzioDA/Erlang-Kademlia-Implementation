@@ -241,12 +241,11 @@ handle_call({routing_table}, _From, State) ->
     {reply, {ok, ets:tab2list(RoutingTable)}, State};
 % Handling synchronous requests to the node.
 % The sending node of the request is stored in the recipient's routing table.
-handle_call({Request, SenderPid}, _, State) when Request /= ping  ->  
+handle_call({Request, SenderPid}, _, State) ->  
     % Save the sender node in the routing table.
     save_node(SenderPid),
-    request_handler(Request, SenderPid, State);
-handle_call({ping, SenderPid}, _, State) ->
-    request_handler(ping, SenderPid, State).
+    request_handler(Request, SenderPid, State).
+
 % Handles a request to find the closest nodes to a given HashID.
 % HashID: The identifier of the target node.
 % State: The current state of the node, including the routing table.
@@ -302,7 +301,8 @@ request_handler({fill_my_routing_table, FilledIndexes}, ClientPid, State) ->
     {reply, Response, State};
 
 % Handles the ping message sent to a node.
-request_handler(ping, _From, State) ->
+request_handler(ping, From, State) ->
+    utils:debugPrint("Ping received ~p~n", [From]),
     % Reply with pong to indicate that the node is alive and reachable.
     {reply, {pong, ok}, State};
 % Handles any unrecognized request by replying with an error.
@@ -408,7 +408,6 @@ find_k_nearest_node(HashID, _, K, [], ContactedNodes) ->
 % Recursive case: Process the next node in the list of candidates.
 find_k_nearest_node(HashID, Bucket_Size, K, [{NodeHash, NodePid}|T], ContactedNodes) ->
     % Log the node being contacted for debugging purposes.
-    utils:debugPrint("Contacting node: ~p~n", [NodePid]),
     % Send a request to the node to find its closest nodes to the HashID.
     case send_request(NodePid, {find_node, HashID}) of
         {ok, NodeList} ->
@@ -484,7 +483,7 @@ join(RoutingTable, K, K_Bucket_Size) ->
             {bootstrap, my_address()};
         BootstrapPid -> 
             % Contact the existing bootstrap node to join the network
-            utils:debugPrint("~p is joining the network by contacting the existing bootstrap node (~p)~n", 
+            utils:print("~p is joining the network by contacting the existing bootstrap node (~p)~n", 
                 [my_address(), BootstrapPid]),
             % Starting a new process to join the network.
             start_thread(
@@ -500,16 +499,17 @@ join(RoutingTable, K, K_Bucket_Size) ->
 % If at the end of the procedure there are still empty 
 % branches the procedure is restarted after 2000 millis.
 join_procedure_starter(NodesList, RoutingTable, K, K_Bucket_Size)->
-    join_procedure(NodesList, RoutingTable, K, K_Bucket_Size, [])
+    join_procedure(NodesList, RoutingTable, K, K_Bucket_Size, []),
 
-    % EmptyBranches = utils:empty_branches(RoutingTable, K),
-    % if EmptyBranches ->
-    %     receive
-    %     after 2000 ->
-    %         join_procedure_starter(NodesList, RoutingTable,K,K_Bucket_Size)
-    %     end;
-    % true -> ok
-    % end
+    EmptyBranches = utils:empty_branches(RoutingTable, K),
+    if EmptyBranches ->
+        receive
+        after 2000 ->
+            utils:print("Restarting join procedure to fill missing branches ~p~n", [my_address()]),
+            join_procedure_starter(NodesList, RoutingTable,K,K_Bucket_Size)
+        end;
+    true -> ok
+    end
 .
 
 join_procedure([], _,_,_,_) ->
@@ -536,7 +536,7 @@ join_procedure([{_,NodePid} | T], RoutingTable, K, K_Bucket_Size, ContactedNodes
                 end,
                 Branches ++ NearestNodes
             ),
-            utils:debugPrint("Nearest List ~p to ~p~n", [NearestNodes, my_address()]),
+            % utils:debugPrint("Nearest List ~p to ~p~n", [NearestNodes, my_address()]),
             NewContactList = NearestNodes ++ T,
 
             FilteredNearestNodes = lists:foldl(fun(Element, Acc) ->
@@ -550,7 +550,6 @@ join_procedure([{_,NodePid} | T], RoutingTable, K, K_Bucket_Size, ContactedNodes
             
             SortedContactList = utils:sort_node_list(FilteredNearestNodes, my_hash_id(K)),
             K_NearestNodes = lists:sublist(SortedContactList, K_Bucket_Size),
-            % utils:debugPrint("Cont ~p", [K_NearestNodes]),
 
             join_procedure(K_NearestNodes, RoutingTable, K, K_Bucket_Size, [NodePid|ContactedNodes]);
         Error -> 

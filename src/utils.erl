@@ -87,13 +87,13 @@ print_routing_table(RoutingTable, MyHash) ->
         ets:tab2list(RoutingTable)
     ).
 
-
+% Used to print console messages
 print(Format)->
     io:format(Format).
 print(Format, Data)->
     io:format(Format, Data).
 
-
+% Used to get verbosity status
 verbose() ->
     Result = get(verbose),
     if Result /= undefined ->
@@ -101,12 +101,13 @@ verbose() ->
     true ->
         false
     end.
-%
+% Used to print debugging messages
+% It only pints when verbosity is set to true
 debugPrint(Format)->
     doItIfVerbose(fun() -> io:format(Format) end).
 debugPrint(Format, Data)->
     doItIfVerbose(fun() -> io:format(Format, Data) end).
-
+% This function implements the verbosity check
 doItIfVerbose(Fun) ->
     Verbose = verbose(),
     

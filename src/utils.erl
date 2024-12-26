@@ -6,7 +6,7 @@
 % -----------------------------------------------------------------------------
 
 - module(utils).
-- export([k_hash/2, get_subtree_index/2, xor_distance/2, sort_node_list/2, empty_branches/2]).
+- export([k_hash/2, get_subtree_index/2, xor_distance/2, sort_node_list/2, empty_branches/2, print/1, print/2]).
 - export([to_bit_list/1, print_routing_table/2, debugPrint/1, debugPrint/2, verbose/0]).
 
 
@@ -87,6 +87,13 @@ print_routing_table(RoutingTable, MyHash) ->
         ets:tab2list(RoutingTable)
     ).
 
+
+print(Format)->
+    io:format(Format).
+print(Format, Data)->
+    io:format(Format, Data).
+
+
 verbose() ->
     Result = get(verbose),
     if Result /= undefined ->
@@ -94,18 +101,16 @@ verbose() ->
     true ->
         false
     end.
-
 %
 debugPrint(Format)->
+    doItIfVerbose(fun() -> io:format(Format) end).
+debugPrint(Format, Data)->
+    doItIfVerbose(fun() -> io:format(Format, Data) end).
+
+doItIfVerbose(Fun) ->
     Verbose = verbose(),
     
     if Verbose ->
-        io:format(Format);
-    true -> ok
-    end.
-debugPrint(Format, Data)->
-    Verbose = verbose(),
-    if Verbose ->
-        io:format(Format, Data);
+        Fun();
     true -> ok
     end.

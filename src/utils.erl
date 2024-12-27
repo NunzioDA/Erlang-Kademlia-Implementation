@@ -6,8 +6,8 @@
 % -----------------------------------------------------------------------------
 
 - module(utils).
-- export([k_hash/2, get_subtree_index/2, xor_distance/2, sort_node_list/2, empty_branches/2, print/1, print/2]).
-- export([to_bit_list/1, print_routing_table/2, debugPrint/1, debugPrint/2, verbose/0]).
+- export([k_hash/2, get_subtree_index/2, xor_distance/2, sort_node_list/2, empty_branches/2, remove_duplicates/1, remove_contacted_nodes/2, print/1, print/2]).
+- export([to_bit_list/1, print_routing_table/2, debugPrint/1, debugPrint/2, verbose/0, set_verbose/1]).
 
 
 % This function is used to convert a bitstring into a list of bits.
@@ -66,6 +66,28 @@ sort_node_list(NodeList, TargetId) ->
         NodeList
     ).
 
+% This function is used to remove duplicates from a list
+remove_duplicates(List) ->
+    lists:foldl(fun(Element, Acc) ->
+        Condition = lists:member(Element, Acc),
+        case Condition of
+            true -> Acc; 
+            false -> [Element | Acc]
+        end
+    end, [], List).
+
+% This function is used to filter already contacted nodes
+% from a nodes list
+remove_contacted_nodes(NodesList, ContactedNodes) ->
+    lists:foldl(fun(Element, Acc) ->
+        {_,Pid} = Element,
+        Condition = lists:member(Pid, ContactedNodes),
+        case Condition of
+            true -> Acc; 
+            false -> [Element | Acc]
+        end
+    end, [], NodesList).
+
 % 
 empty_branches(RoutingTable, K) ->
     Tab2List = ets:tab2list(RoutingTable),
@@ -92,6 +114,12 @@ print(Format)->
     io:format(Format).
 print(Format, Data)->
     io:format(Format, Data).
+
+
+% Verbose is used to decide if the debugPrint function
+% should print the text or not 
+set_verbose(Verbose) ->
+    put(verbose, Verbose).
 
 % Used to get verbosity status
 verbose() ->

@@ -7,12 +7,13 @@
 
 - module(starter).
 
-- export([start/1]).
+- export([start/2]).
 
-start(N) -> 
+start(Bootstraps, Processes) -> 
+    
     analytics_collector:start(),
     registerShell(),
-    debug_find_node(N).
+    debug_find_node(Bootstraps, Processes).
 
 registerShell() ->
     ShellPid = whereis(shellPid),
@@ -21,13 +22,19 @@ registerShell() ->
     true->ok
     end.
 
-debug_find_node(N) ->
-    
+debug_find_node(Bootstraps, Processes) ->
+    lists:foreach(
+        fun(_) ->
+            node:start(5, 4, true)
+        end,
+        lists:seq(1,Bootstraps)
+    ),
+
     lists:foreach(
         fun(_) ->
             node:start(5, 4, false)
         end,
-        lists:seq(0,N)
+        lists:seq(1,Processes)
     ).
 
 % quit() ->

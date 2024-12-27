@@ -114,9 +114,12 @@ add(ClientPid, EventType, Event) ->
 	make_request(cast, {new_event, ClientPid, EventType, Event})
 .
 
+% This function is used to get the events list of a given type.
 get_events(EventType) ->
-	[{_, List}] = ets:lookup(analytics, EventType),
-	List.
+	case ets:lookup(analytics, EventType) of
+		[{_, List}] -> List;
+		_ -> []
+	end.
 
 % This function allows to make a request to the analytics server
 % analytics server must be started before making requests

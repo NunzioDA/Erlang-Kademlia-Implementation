@@ -8,9 +8,9 @@
 - module(starter).
 
 - export([start/1]).
-- import(node, [talk/0]).
 
 start(N) -> 
+    analytics_collector:start(),
     registerShell(),
     debug_find_node(N).
 

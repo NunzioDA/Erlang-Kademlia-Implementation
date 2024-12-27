@@ -8,25 +8,26 @@
 -module(node).
 -behaviour(gen_server).
 -export([init/1, handle_call/3, handle_cast/2, terminate/2]).
--export([start/2, start/3, send_request/2, ping_node/1, store_value/5, join/3, find_value/2, find_k_nearest_node/4, get_routing_table/1]).
+-export([start/3, start/4, send_request/2, send_async_request/2, ping_node/1, store_value/5, join/3, find_value/2, find_k_nearest_node/4, get_routing_table/1]).
 
 
 % Starts a new node in the Kademlia network.
 % K -> Number of bits to represent a node ID.
 % T -> Time interval for republishing data.
 % Returns the process identifier (PID) of the newly created node.
-start(K, T) ->
-    start(K, T, false)
+start(K, T, InitAsBootstrap) ->
+    start(K, T, InitAsBootstrap, false)
 .
-start(K, T, Verbose) ->
-    Pid = start_link(K, T, Verbose),
+
+start(K, T, InitAsBootstrap, Verbose) ->
+    Pid = start_link(K, T, InitAsBootstrap, Verbose),
     Pid
 .
 
 % Starts the node process.
 % gen_server:start_link/3 calls init/1, who takes in input [K, T].
-start_link(K, T, Verbose) ->
-    {ok, Pid} = gen_server:start_link(?MODULE, [K, T, Verbose], []),
+start_link(K, T, InitAsBootstrap, Verbose) ->
+    {ok, Pid} = gen_server:start_link(?MODULE, [K, T, InitAsBootstrap, Verbose], []),
     Pid
 .
 
@@ -34,9 +35,9 @@ start_link(K, T, Verbose) ->
 % Creates one ETS table and a map:
 % - RoutingTable: Used to store the routing information of the node.
 % - ValuesMap: Used to store key-value pairs managed by the node.
-init([K, T, Verbose]) ->
-    save_address(self()),
-    set_verbose(Verbose),
+init([K, T, InitAsBootstrap, Verbose]) ->
+    com:save_address(self()),
+    utils:set_verbose(Verbose),
     % Generate a unique integer to create distinct ETS table names for each node.
     UniqueInteger = integer_to_list(erlang:unique_integer([positive])),    
     % Create unique table name for routing by appending the unique integer.
@@ -48,7 +49,11 @@ init([K, T, Verbose]) ->
     % Define the bucket size for routing table entries.
     Bucket_Size = 20,
 
-    join(RoutingTable, K, Bucket_Size),
+    if not InitAsBootstrap ->
+        join(RoutingTable, K, Bucket_Size);
+    true ->
+        register_bootstrap()
+    end,
 
     % Return the initialized state, containing ETS tables and configuration parameters.
     {ok, {RoutingTable, ValuesTable, K, T, Bucket_Size}}
@@ -60,22 +65,20 @@ init([K, T, Verbose]) ->
 %%%                     %%%  
 %%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-start_thread(Function) ->
-    ParentAddress = my_address(),
-    Verbose = utils:verbose(),
-    spawn(
-        fun()->
-            % Saving parent address and verbose in the new process
-            % so it can behave like the parent
-            set_verbose(Verbose),
-            save_address(ParentAddress),
-            Function()
-        end
-    ).
+register_bootstrap() ->
+    analytics_collector:register_bootstrap(com:my_address()).
+
+pick_bootstrap() ->
+    BootstrapList = analytics_collector:get_bootstrap_list(),
+    Length = length(BootstrapList),                    
+    Index = rand:uniform(Length),
+    Bootstrap = lists:nth(Index, BootstrapList),
+    Bootstrap.
+
 
 % This function is used to get the hash id of the node starting from his pid.
 my_hash_id(K) ->
-    PidString = pid_to_list(my_address()),
+    PidString = pid_to_list(com:my_address()),
     utils:k_hash(PidString, K)
 .
 
@@ -83,7 +86,7 @@ my_hash_id(K) ->
 % Save node is managed with a cast request so that it is not blocking
 % for the call handling functions or else it would cause a timeout.
 save_node(NodePid) -> 
-    MyPid = my_address(),
+    MyPid = com:my_address(),
     StringPid = pid_to_list(MyPid),
 
     % Save node avoids saving its own pid or the shell pid 
@@ -92,7 +95,7 @@ save_node(NodePid) ->
         if NodePid /= ShellPid, NodePid /= undefined ->
             % gen_server:cast is used so save_node is not blocking
             % send_async_request is not used because save_node is handled separately
-            gen_server:cast(my_address(), {save_node, NodePid});
+            gen_server:cast(com:my_address(), {save_node, NodePid});
         true -> {ignored_node, "Shell pid passed"}
         end;
     true -> {ignored_node, "Can't save my pid"}
@@ -279,14 +282,34 @@ request_handler({fill_my_routing_table, FilledIndexes}, ClientPid, State) ->
     ClientHash = utils:k_hash(pid_to_list(ClientPid), K),
     SubTreeIndex = utils:get_subtree_index(my_hash_id(K), ClientHash),
 
-    AllBranches = lists:seq(0, SubTreeIndex),
+    AllBranches = lists:seq(1, SubTreeIndex + 1),
     % The server avoids to lookup for the branches that the client have already filled.
     BranchesToLookup = lists:filter(
         fun(X) -> 
-            not lists:member(X, FilledIndexes) andalso X =< SubTreeIndex            
+            not lists:member(X, FilledIndexes)            
         end, 
         AllBranches
     ),
+
+    if SubTreeIndex =< K ->
+        OtherBranchesToLookUp = lists:seq(SubTreeIndex + 1, K + 1),
+        OtherBranches = lists:foldl(
+            fun(Branch, NodeList) ->
+                BranchContent = branch_lookup(RoutingTable, Branch),
+                BranchLen = length(BranchContent),
+                if(BranchLen > (Bucket_Size div 2)) -> 
+                    HalfBranch = lists:sublist(BranchContent, 1, Bucket_Size div 2);
+                true ->
+                    HalfBranch = BranchContent
+                end,
+                NodeList ++ HalfBranch
+            end,
+            [],
+            OtherBranchesToLookUp
+        );
+    true -> OtherBranches = []
+    end,
+
     Branches = lists:foldl(
         fun(Branch, NodeList) ->
             BranchContent = branch_lookup(RoutingTable, Branch),
@@ -296,8 +319,8 @@ request_handler({fill_my_routing_table, FilledIndexes}, ClientPid, State) ->
         BranchesToLookup
     ),
     % The server returns the nearest nodes to the client that are next to be requested.
-    NearestNodes = find_node(RoutingTable, Bucket_Size, K, ClientHash),
-    Response = {ok, {Branches, NearestNodes}},
+    NearestNodes = find_node(RoutingTable, 2, K, ClientHash),
+    Response = {ok, {Branches ++ OtherBranches ++ NearestNodes}},
     {reply, Response, State};
 
 % Handles the ping message sent to a node.
@@ -305,6 +328,9 @@ request_handler(ping, From, State) ->
     utils:debugPrint("Ping received ~p~n", [From]),
     % Reply with pong to indicate that the node is alive and reachable.
     {reply, {pong, ok}, State};
+request_handler(verbose, _, State) ->
+    Verbose = utils:verbose(),
+    {reply, {ok, Verbose}, State};
 % Handles any unrecognized request by replying with an error.
 request_handler(_, _, State) ->
     {reply, not_handled_request, State}
@@ -334,10 +360,14 @@ async_request_handler({store, Key, Value}, State) ->
     NewValuesTable = maps:put(Key, Value, ValuesTable),
     NewState = {RoutingTable, NewValuesTable, K, T, Bucket_Size},
     {noreply, NewState}
-.
+;
+async_request_handler({talk},State) ->
+    Verbose = utils:verbose(),
+    utils:set_verbose(not Verbose),
+    {noreply, State}.
 
 terminate(_Reason, _State) ->
-    utils:debugPrint("Node ~p is terminating.~n", [my_address()]),
+    utils:debugPrint("Node ~p is terminating.~n", [com:my_address()]),
     ok
 .
 
@@ -348,19 +378,6 @@ terminate(_Reason, _State) ->
 %%%                            %%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-% This function saves the node address (Pid) in the process 
-% dictionary so that the process and all his subprocesses can
-% use the same address
-save_address(Address) ->
-    put(my_address, Address).
-% This function gets the process address
-my_address() ->
-    get(my_address).
-
-% Verbose is used to decide if the debugPrint function
-% should print the text or not 
-set_verbose(Verbose) ->
-    put(verbose, Verbose).
 
 % This function is used for debugging purposess
 % allowing to print the routing table in the shell
@@ -379,7 +396,7 @@ send_request(NodePid, Request) when is_list(NodePid) ->
 send_request(NodePid, Request) when is_pid(NodePid) ->
     
     try
-        gen_server:call(NodePid, {Request, my_address()}, 5000)
+        gen_server:call(NodePid, {Request, com:my_address()})
     catch _:Reason ->
         {error,Reason}
     end
@@ -388,7 +405,8 @@ send_request(NodePid, Request) when is_pid(NodePid) ->
 % This function is used to send asynchronous requests to a node.
 % NodeId is the node to which the request is sent.
 send_async_request(NodePid, Request) ->
-    gen_server:cast(NodePid, {Request, my_address()}).
+
+    gen_server:cast(NodePid, {Request, com:my_address()}).
 
 % Finds the K closest nodes in the network to a given HashID.
 % The function starts by querying the local routing table for potential candidates.
@@ -411,12 +429,12 @@ find_k_nearest_node(HashID, Bucket_Size, K, [{NodeHash, NodePid}|T], ContactedNo
     % Send a request to the node to find its closest nodes to the HashID.
     case send_request(NodePid, {find_node, HashID}) of
         {ok, NodeList} ->
-            % Filter the returned node list to exclude nodes already contacted or my_address.
+            % Filter the returned node list to exclude nodes already contacted or com:my_address.
             FilteredNodeList = lists:filter(
                 fun(Node) -> 
                     {_, FilterPid} = Node,
                     not lists:member(Node, ContactedNodes) andalso
-                    FilterPid /= pid_to_list(my_address())
+                    FilterPid /= pid_to_list(com:my_address())
                 end, 
                 NodeList
             ),
@@ -473,28 +491,21 @@ store_value(Key, Value, RoutingTable, K, Bucket_Size) ->
 % Function to join the network. If no nodes exist, the actor becomes the bootstrap node.
 % Otherwise, it contacts the existing bootstrap node.
 join(RoutingTable, K, K_Bucket_Size) ->
-    case whereis(bootstrap) of
-        undefined -> 
-            % No existing nodes, become the bootstrap node.
-            register(bootstrap, my_address()),
-            % Register this node as the bootstrap node in the global registry.
-            % This way anyone knows the bootstrap and can join the network.
-            utils:debugPrint("Node with pid ~p is the bootstrap node!~n", [my_address()]),
-            {bootstrap, my_address()};
-        BootstrapPid -> 
-            % Contact the existing bootstrap node to join the network
-            utils:debugPrint("~p is joining the network by contacting the existing bootstrap node (~p)~n", 
-                [my_address(), BootstrapPid]),
-            % Starting a new process to join the network.
-            start_thread(
-                fun() -> 
-                    BootstrapHash = utils:k_hash(pid_to_list(BootstrapPid), K),
-                    analytics_collector:started_join_procedure(my_address()),
-                    join_procedure_starter([{BootstrapHash, BootstrapPid}], RoutingTable, K, K_Bucket_Size),
-                    analytics_collector:finished_join_procedure(my_address())
-                end
-            )
-    end 
+
+    BootstrapPid = pick_bootstrap(),
+
+    % Contact the existing bootstrap node to join the network
+    utils:debugPrint("~p is joining the network by contacting the existing bootstrap node (~p)~n", 
+        [com:my_address(), BootstrapPid]),
+    % Starting a new process to join the network.
+    thread:start(
+        fun() -> 
+            BootstrapHash = utils:k_hash(pid_to_list(BootstrapPid), K),
+            analytics_collector:started_join_procedure(com:my_address()),
+            join_procedure_starter([{BootstrapHash, BootstrapPid}], RoutingTable, K, K_Bucket_Size),
+            analytics_collector:finished_join_procedure(com:my_address())
+        end
+    )
 .
 
 % This function starts the join procedure.
@@ -507,8 +518,25 @@ join_procedure_starter(NodesList, RoutingTable, K, K_Bucket_Size)->
     if EmptyBranches ->
         receive
         after 2000 ->
-            utils:debugPrint("Restarting join procedure to fill missing branches ~p~n", [my_address()]),
-            join_procedure_starter(NodesList, RoutingTable,K,K_Bucket_Size)
+            case send_request(com:my_address(),verbose) of
+                {ok, Verbose} -> utils:set_verbose(Verbose);
+                _ -> ok
+            end,
+            utils:debugPrint("Restarting join procedure to fill missing branches ~p~n", [com:my_address()]),
+            [{BootstrapHash,Bootstrap}] = NodesList,
+            case send_request(Bootstrap, {find_node, BootstrapHash}) of
+                {ok, NodeList} ->
+                    Length = length(NodeList),                    
+                    Index = rand:uniform(Length),
+                    {NewBootstrapHash, NewBootstrap} = lists:nth(Index, NodeList);
+                    % utils:debugPrint("New bootstrap ~p~n", [{NewBootstrapHash, NewBootstrap}]);
+                _ -> 
+                    NewBootstrapPid = pick_bootstrap(),
+                    NewBootstrap = pid_to_list(NewBootstrapPid),
+                    NewBootstrapHash = utils:k_hash(NewBootstrap, K)
+            end,
+            
+            join_procedure_starter([{NewBootstrapHash,NewBootstrap}], RoutingTable, K, K_Bucket_Size)
         end;
     true -> ok
     end
@@ -519,60 +547,62 @@ join_procedure_starter(NodesList, RoutingTable, K, K_Bucket_Size)->
 join_procedure([], _,_,_,_) ->
     ok;
 join_procedure([{_,NodePid} | T], RoutingTable, K, K_Bucket_Size, ContactedNodes) ->
-    % The first node is saved
-    save_node(NodePid),
+    MyStringPid = pid_to_list(com:my_address()),
+    if NodePid /= MyStringPid ->
+        % The first node is saved
+        save_node(NodePid),
 
-    % Saving the branches that already have at least one element
-    Tab2List = ets:tab2list(RoutingTable),
-    FilledBranches = lists:foldl(
-        fun({BranchID, List}, Acc) ->
-            case List of
-                [] -> Acc;
-                _ -> [BranchID | Acc]
-            end
-        end,
-        [],
-        Tab2List
-    ),
-
-    % Sending request to the saved node, asking for new nodes.
-    % This request will return the nodes in the opposite branches
-    % relative to each consecutive shared bit in the head of the hash id.
-    % The nearest nodes to the sender node are also returned. 
-    % These will be the next nodes to contact because they share most of 
-    % the branches with the sender.
-    % The variable FilledBranches contains the branches that are already filled, 
-    % allowing the receiver to ignore them and return only what's needed.
-    case send_request(NodePid, {fill_my_routing_table, FilledBranches}) of
-        {ok, {Branches, NearestNodes}} -> 
-            % saving all the new nodes
-            lists:foreach(
-                fun({_, NewNode}) ->
-                    save_node(NewNode)
-                end,
-                Branches ++ NearestNodes
-            ),
-            % utils:debugPrint("Nearest List ~p to ~p~n", [NearestNodes, my_address()]),
-            NewContactList = NearestNodes ++ T,
-
-            % Filtering out nodes that have already been contacted and removing duplicates.
-            FilteredNearestNodes = lists:foldl(fun(Element, Acc) ->
-                {_,Pid} = Element,
-                Condition = lists:member(Element, Acc) orelse lists:member(Pid, ContactedNodes),
-                case Condition of
-                    true -> Acc; 
-                    false -> [Element | Acc]
+        % Saving the branches that already have at least one element
+        Tab2List = ets:tab2list(RoutingTable),
+        FilledBranches = lists:foldl(
+            fun({BranchID, List}, Acc) ->
+                case List of
+                    [] -> Acc;
+                    _ -> [BranchID | Acc]
                 end
-            end, [], NewContactList),
-            
-            % Sorting new nodes
-            SortedContactList = utils:sort_node_list(FilteredNearestNodes, my_hash_id(K)),
-            K_NearestNodes = lists:sublist(SortedContactList, K_Bucket_Size),
+            end,
+            [],
+            Tab2List
+        ),
+        FilledBranchesLen = length(FilledBranches),
+        if FilledBranchesLen < K + 1 ->
+            % Sending request to the saved node, asking for new nodes.
+            % This request will return the nodes in the opposite branches
+            % relative to each consecutive shared bit in the head of the hash id.
+            % The nearest nodes to the sender node are also returned. 
+            % These will be the next nodes to contact because they share most of 
+            % the branches with the sender.
+            % The variable FilledBranches contains the branches that are already filled, 
+            % allowing the receiver to ignore them and return only what's needed.
+            utils:debugPrint("Contacting node ~p~n", [NodePid]),
+            case send_request(NodePid, {fill_my_routing_table, FilledBranches}) of
+                {ok, {Branches}} -> 
+                    utils:debugPrint("Done node ~p~n", [NodePid]),
+                    % saving all the new nodes
+                    lists:foreach(
+                        fun({_, NewNode}) ->
+                            save_node(NewNode)
+                        end,
+                        Branches
+                    ),
+                    utils:debugPrint("Nearest List ~p to ~p~n", [Branches, com:my_address()]),
+                    NewContactedNodesList =  [NodePid|ContactedNodes],
 
-            join_procedure(K_NearestNodes, RoutingTable, K, K_Bucket_Size, [NodePid|ContactedNodes]);
-        Error -> 
-            {error, Error}
-    end.
+                    RemovedContacted = utils:remove_contacted_nodes(T ++ Branches, NewContactedNodesList),
+                    FilteredNewContactList = utils:remove_duplicates(RemovedContacted),
+                    SortedNewContactList = utils:sort_node_list(FilteredNewContactList, my_hash_id(K)),
+                
+
+                    join_procedure(SortedNewContactList, RoutingTable, K, K_Bucket_Size, NewContactedNodesList);
+                Error -> 
+                    utils:debugPrint("Error occurred ~p~n", [Error]),
+                    join_procedure(T, RoutingTable, K, K_Bucket_Size, [NodePid|ContactedNodes])
+            end;
+        true -> ok
+        end;
+    true -> ok
+    end
+.
 
 
 

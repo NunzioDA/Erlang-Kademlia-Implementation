@@ -483,13 +483,15 @@ join(RoutingTable, K, K_Bucket_Size) ->
             {bootstrap, my_address()};
         BootstrapPid -> 
             % Contact the existing bootstrap node to join the network
-            utils:print("~p is joining the network by contacting the existing bootstrap node (~p)~n", 
+            utils:debugPrint("~p is joining the network by contacting the existing bootstrap node (~p)~n", 
                 [my_address(), BootstrapPid]),
             % Starting a new process to join the network.
             start_thread(
                 fun() -> 
                     BootstrapHash = utils:k_hash(pid_to_list(BootstrapPid), K),
-                    join_procedure_starter([{BootstrapHash, BootstrapPid}], RoutingTable, K, K_Bucket_Size)                    
+                    analytics_collector:started_join_procedure(my_address()),
+                    join_procedure_starter([{BootstrapHash, BootstrapPid}], RoutingTable, K, K_Bucket_Size),
+                    analytics_collector:finished_join_procedure(my_address())
                 end
             )
     end 
@@ -505,7 +507,7 @@ join_procedure_starter(NodesList, RoutingTable, K, K_Bucket_Size)->
     if EmptyBranches ->
         receive
         after 2000 ->
-            utils:print("Restarting join procedure to fill missing branches ~p~n", [my_address()]),
+            utils:debugPrint("Restarting join procedure to fill missing branches ~p~n", [my_address()]),
             join_procedure_starter(NodesList, RoutingTable,K,K_Bucket_Size)
         end;
     true -> ok

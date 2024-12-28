@@ -42,10 +42,11 @@ init([K, T, InitAsBootstrap, Verbose]) ->
     UniqueInteger = integer_to_list(erlang:unique_integer([positive])),    
     % Create unique table name for routing by appending the unique integer.
     RoutingName = list_to_atom("routing_table" ++ UniqueInteger),
+    ValuesMapName = list_to_atom("values_table" ++ UniqueInteger),
     % Initialize ETS table with the specified properties.
     RoutingTable = ets:new(RoutingName, [set, public]),
     % Initialize ValuesTable as an empty map.
-    ValuesTable = #{},
+    ValuesTable = ets:new(ValuesMapName, [set, public]),
     % Define the bucket size for routing table entries.
     Bucket_Size = 20,
 
@@ -256,21 +257,18 @@ find_node(_, NodesCount, K_Bucket_Size, BranchID, K, _, I)
 
 get_value(Key, K, ValuesTable) ->
     KeyHash = utils:k_hash(Key, K),
-    HashIsKey = maps:is_key(KeyHash, ValuesTable),
-    if HashIsKey ->
-        ValuesMap = maps:get(KeyHash, ValuesTable),
-        KeyIsKey = maps:is_key(Key, ValuesMap),
-        if KeyIsKey ->
-            Value = maps:get(Key, ValuesMap),
-            Return = {ok, Key, Value};
-        true ->
-            Return = {no_value, empty}
-        end;
-    true ->
-        Return = {no_value, empty}
-    end,
-    Return
-.
+    case ets:lookup(ValuesTable, KeyHash) of
+        [{KeyHash, ValuesMap}] ->
+            case maps:is_key(Key, ValuesMap) of
+                true ->
+                    Value = maps:get(Key, ValuesMap),
+                    {ok, Key, Value};
+                false ->
+                    {no_value, empty}
+            end;
+        [] ->
+            {no_value, empty}
+    end.
 
 %-----------------------------------------------------------------------------------
 % SYNCHRONOUS REQUESTS MANAGEMENT 
@@ -406,23 +404,21 @@ handle_cast({Request, SenderPid}, State) when is_tuple(Request) ->
 % A node store a key/value pair in its own values table.
 % The node also saves the sender node in its routing table.
 async_request_handler({put_value, Key, Value}, State) ->
-    {RoutingTable, ValuesTable, K, T, Bucket_Size} = State,
+    {_, ValuesTable, K, _, _} = State,
     KeyHash = utils:k_hash(Key, K),
-    HashIsKey = maps:is_key(KeyHash, ValuesTable),
-    if HashIsKey ->
-        ValuesMap = maps:get(KeyHash, ValuesTable),
-        KeyIsKey = maps:is_key(Key, ValuesMap),
-        if not KeyIsKey ->
-            NewValuesMap = maps:put(Key, Value, ValuesMap),
-            NewValuesTable = maps:put(KeyHash, NewValuesMap, ValuesTable);
-        true ->
-            NewValuesTable = ValuesTable
-        end;
-    true ->
-        NewValuesTable = maps:put(KeyHash, #{Key => Value}, ValuesTable)
-    end, 
-    NewState = {RoutingTable, NewValuesTable, K, T, Bucket_Size},
-    {noreply, NewState}
+    case ets:lookup(ValuesTable, KeyHash) of
+        [] -> 
+            ets:insert(ValuesTable, {KeyHash, #{Key => Value}});
+        [{_,ValuesMap}] ->
+            KeyIsKey = maps:is_key(Key, ValuesMap),
+            if not KeyIsKey ->
+                NewValuesMap = maps:put(Key, Value, ValuesMap),
+                ets:insert(ValuesTable, {KeyHash, NewValuesMap});
+            true ->
+                ok
+            end 
+    end,
+    {noreply, State}
 ;
 async_request_handler({store, Key, Value}, State) ->
     {RoutingTable, _,K,_,Bucket_Size} = State,

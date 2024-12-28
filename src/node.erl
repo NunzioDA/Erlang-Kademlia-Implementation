@@ -52,7 +52,7 @@ init([K, T, InitAsBootstrap, Verbose]) ->
     if not InitAsBootstrap ->
         join(RoutingTable, K, Bucket_Size);
     true ->
-        register_bootstrap()
+        register_as_bootstrap()
     end,
 
     % Return the initialized state, containing ETS tables and configuration parameters.
@@ -65,7 +65,7 @@ init([K, T, InitAsBootstrap, Verbose]) ->
 %%%                     %%%  
 %%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-register_bootstrap() ->
+register_as_bootstrap() ->
     analytics_collector:register_bootstrap(com:my_address()).
 
 pick_bootstrap() ->
@@ -328,14 +328,10 @@ request_handler(ping, From, State) ->
     utils:debugPrint("Ping received ~p~n", [From]),
     % Reply with pong to indicate that the node is alive and reachable.
     {reply, {pong, ok}, State};
-request_handler(verbose, _, State) ->
-    Verbose = utils:verbose(),
-    {reply, {ok, Verbose}, State};
 % Handles any unrecognized request by replying with an error.
 request_handler(_, _, State) ->
     {reply, not_handled_request, State}
 .
-
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%                            %%%
@@ -348,11 +344,10 @@ handle_cast({save_node, NodePid}, State) ->
     {RoutingTable, _, K, _, Bucket_Size} = State,
     save_node(NodePid, RoutingTable, K, Bucket_Size),
     {noreply, State};
-
 handle_cast({Request, SenderPid}, State) when is_tuple(Request) ->
-    
     save_node(SenderPid),
     async_request_handler(Request, State).
+
 % A node store a key/value pair in its own values table.
 % The node also saves the sender node in its routing table.
 async_request_handler({store, Key, Value}, State) ->
@@ -468,7 +463,6 @@ store_value(Key, Value, RoutingTable, K, Bucket_Size) ->
         NodeList
     )
 .
-
 
 % Function to join the network. If no nodes exist, the actor becomes the bootstrap node.
 % Otherwise, it contacts the existing bootstrap node.

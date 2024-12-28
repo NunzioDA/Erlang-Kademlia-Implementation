@@ -58,11 +58,27 @@ get_threads() ->
 % This method is called from the parent process to
 % automatically set the verbosity of all its threads 
 set_verbose(Verbose) ->
+    send_message_to_my_threads({verbose, Verbose})
+.
+% This is a generic function that sends messages to
+% the threads a process started.
+% It also checks if threads are still alive, removing those
+% who are not alive anymore.
+send_message_to_my_threads(Message) -> 
     Threads = get_threads(),
-    lists:foreach(
-        fun(Pid) ->
-            Pid ! {verbose, Verbose}
+    NewThreads = lists:foldl(
+        fun(Pid, Acc) ->
+            IsAlive = erlang:is_process_alive(Pid),
+            if IsAlive -> 
+                Pid ! Message,
+                [Pid | Acc];
+            true -> 
+                Acc
+            end
         end,
+        [],
         Threads
-    )
+    ),
+    put(my_threads, NewThreads),
+    ok
 .

@@ -10,7 +10,7 @@
 -behaviour(gen_server).
 
 -export([init/1, handle_call/3, handle_cast/2, terminate/2, code_change/3]).
--export([start/0, register_bootstrap/1, get_bootstrap_list/0, started_join_procedure/1, finished_join_procedure/1, join_procedure_mean_time/0, get_unfinished_processes/0]).
+-export([start/0, enroll_bootstrap/1, get_bootstrap_list/0, started_join_procedure/1, finished_join_procedure/1, join_procedure_mean_time/0, get_unfinished_processes/0]).
 
 % --------------------------------
 % Starting methods
@@ -52,7 +52,7 @@ finished_join_procedure(Pid) ->
 	EndMillis = erlang:monotonic_time(millisecond),
 	add(Pid, finished_join_procedure, EndMillis).
 
-register_bootstrap(Pid) ->
+enroll_bootstrap(Pid) ->
 	add(Pid, bootstrap, 1).
 %
 %------------------------------------

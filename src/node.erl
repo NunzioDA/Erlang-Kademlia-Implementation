@@ -52,22 +52,18 @@ init([K, T, InitAsBootstrap, Verbose]) ->
     if not InitAsBootstrap ->
         join(RoutingTable, K, Bucket_Size);
     true ->
-        register_as_bootstrap()
+        enroll_as_bootstrap()
     end,
 
     % Return the initialized state, containing ETS tables and configuration parameters.
     {ok, {RoutingTable, ValuesTable, K, T, Bucket_Size}}
 .
 
-%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%%%                     %%%
-%%% AUSILIARY FUNCTIONS %%%
-%%%                     %%%  
-%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% This fuction is used to enroll the current node as bootstrap
+enroll_as_bootstrap() ->
+    analytics_collector:enroll_bootstrap(com:my_address()).
 
-register_as_bootstrap() ->
-    analytics_collector:register_bootstrap(com:my_address()).
-
+%  This function is used to pick a random bootstrap node
 pick_bootstrap() ->
     BootstrapList = analytics_collector:get_bootstrap_list(),
     Length = length(BootstrapList),                    

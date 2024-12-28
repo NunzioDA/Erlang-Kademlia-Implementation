@@ -13,7 +13,7 @@ start(Bootstraps, Processes) ->
     
     analytics_collector:start(),
     registerShell(),
-    debug_find_node(Bootstraps, Processes).
+    test1(Bootstraps, Processes).
 
 registerShell() ->
     ShellPid = whereis(shellPid),
@@ -22,17 +22,17 @@ registerShell() ->
     true-> ok
     end.
 
-debug_find_node(Bootstraps, Processes) ->
+test1(Bootstraps, Processes) ->
     lists:foreach(
         fun(_) ->
-            node:start(5, 4, true)
+            node:start(5, 4000, true)
         end,
         lists:seq(1,Bootstraps)
     ),
 
     lists:foreach(
         fun(_) ->
-            node:start(5, 4, false)
+            node:start(5, 4000, false)
         end,
         lists:seq(1,Processes)
     ).

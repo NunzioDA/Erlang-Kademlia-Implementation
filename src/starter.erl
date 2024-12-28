@@ -17,9 +17,9 @@ start(Bootstraps, Processes) ->
 
 registerShell() ->
     ShellPid = whereis(shellPid),
-    if(ShellPid /= undefined) ->
+    if(ShellPid == undefined) ->
         register(shellPid, self());
-    true->ok
+    true-> ok
     end.
 
 debug_find_node(Bootstraps, Processes) ->

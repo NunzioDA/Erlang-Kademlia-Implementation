@@ -8,13 +8,19 @@
 - module(starter).
 
 - export([start/2]).
-
-start(Bootstraps, Processes) -> 
-    
+% This function is used to start the simulation
+% It starts the analytics_collector and calls
+% the test function to start Bootstraps
+% bootstrsap nodes and Processes normal processes 
+start(Bootstraps, Processes) ->    
     analytics_collector:start(),
     registerShell(),
     test1(Bootstraps, Processes).
 
+% Join procedure is registered
+% so that all the processes can
+% avoid saving shell pid when 
+% receiving a command from the shell
 registerShell() ->
     ShellPid = whereis(shellPid),
     if(ShellPid == undefined) ->
@@ -36,11 +42,3 @@ test1(Bootstraps, Processes) ->
         end,
         lists:seq(1,Processes)
     ).
-
-% quit() ->
-    % SystemPids = [self(), group_leader()],
-    % Pids = [Pid || Pid <- processes(), not lists:member(Pid, SystemPids)],
-    % lists:foreach(fun(Pid) ->
-    %     catch exit(Pid, kill)
-    % end, Pids),
-    % ok.

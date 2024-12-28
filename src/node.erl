@@ -374,11 +374,11 @@ request_handler({find_value_net, Key}, _, State) ->
     {_,_,K,_,_} = State,
     thread:start(
         fun() ->
-            case find_value_implementation(Key, [{com:my_hash_id(K), com:my_address()}]) of
+            case find_value_implementation(Key, [{com:my_hash_id(K), com:my_address()}], []) of
                 {value_not_found, empty} ->
-                    utils:print("[~p] Value ~p not found", [com:my_address(), Key]);
+                    utils:print("[~p] Value ~p not found~n", [com:my_address(), Key]);
                 {ok, _, Value} ->
-                    utils:print("[~p] Value found: ~p => ~p", [com:my_address(), Key, Value])
+                    utils:print("[~p] Value found: ~p => ~p~n", [com:my_address(), Key, Value])
             end
         end   
     ),
@@ -510,15 +510,17 @@ store_value(Key, Value, RoutingTable, K, Bucket_Size) ->
 .
 
 % Finds the value associated with a given key in the network.
-find_value_implementation(Key, []) when not is_pid(Key) ->
+find_value_implementation(_, [], _) ->
     {value_not_found, empty};
-find_value_implementation(Key, [{_, Pid} | T]) ->
+find_value_implementation(Key, [{_, Pid} | T], ContactedNodes) ->
     case com:send_request(Pid, {find_value, Key}) of
         {nodes_list, NodeList} ->
-            find_value_implementation(Key,NodeList);
+            NewContactedNodes = [Pid | ContactedNodes],
+            NewNodeList = utils:remove_contacted_nodes(NodeList, NewContactedNodes),
+            find_value_implementation(Key, NewNodeList, NewContactedNodes);
         {ok, ValueKey, Value} ->
             {ok, ValueKey, Value};
-        _ -> find_value_implementation(Key,T)
+        _ -> find_value_implementation(Key,T, [Pid | ContactedNodes])
     end
 .
     

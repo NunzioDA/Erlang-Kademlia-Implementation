@@ -11,7 +11,7 @@
 
 -module(thread).
 
--export([start/1, check_verbose/0, set_verbose/1]).
+-export([start/1, check_verbose/0, set_verbose/1, kill_all/0]).
 
 start(Function) ->
     ParentAddress = com:my_address(),
@@ -26,6 +26,16 @@ start(Function) ->
         end
     ),
     save_thread(Pid)
+.
+
+kill_all()->
+    Threads = get_threads(),
+    lists:foreach(
+        fun(Thread) ->
+            exit(Thread, kill)
+        end,
+        Threads
+    )
 .
 
 % This method has to be used in the function

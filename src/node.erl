@@ -1,14 +1,14 @@
 % -----------------------------------------------------------------------------
 % Module: node
 % Author(s): Nunzio D'Amore, Francesco Rossi
-% Date: 2013-01-15
+% Date: 2024-12-15
 % Description: This module manages the node behaviour.
 % -----------------------------------------------------------------------------
 
 -module(node).
 -behaviour(gen_server).
 -export([init/1, handle_call/3, handle_cast/2, terminate/2]).
--export([start/3, start/4, send_request/2, send_async_request/2, ping_node/1, store_value/5, join/3, find_value/2, find_k_nearest_node/4, get_routing_table/1]).
+-export([start/3, start/4, ping_node/1, store_value/5, join/3, find_value/2, find_k_nearest_node/4, get_routing_table/1]).
 
 
 % Starts a new node in the Kademlia network.
@@ -94,7 +94,7 @@ save_node(NodePid) ->
         ShellPid = whereis(shellPid),
         if NodePid /= ShellPid, NodePid /= undefined ->
             % gen_server:cast is used so save_node is not blocking
-            % send_async_request is not used because save_node is handled separately
+            % com:send_async_request is not used because save_node is handled separately
             gen_server:cast(com:my_address(), {save_node, NodePid});
         true -> {ignored_node, "Shell pid passed"}
         end;
@@ -364,6 +364,7 @@ async_request_handler({store, Key, Value}, State) ->
 async_request_handler({talk},State) ->
     Verbose = utils:verbose(),
     utils:set_verbose(not Verbose),
+    thread:set_verbose(not Verbose),
     {noreply, State}.
 
 terminate(_Reason, _State) ->
@@ -389,25 +390,6 @@ get_routing_table(NodePid) ->
         Err -> utils:debugPrint("~p",[Err])
     end.
 
-% This function is used to send synchronous requests to a node.
-% NodeId is the node to which the request is sent.
-send_request(NodePid, Request) when is_list(NodePid) ->
-    send_request(list_to_pid(NodePid), Request);
-send_request(NodePid, Request) when is_pid(NodePid) ->
-    
-    try
-        gen_server:call(NodePid, {Request, com:my_address()})
-    catch _:Reason ->
-        {error,Reason}
-    end
-.
-
-% This function is used to send asynchronous requests to a node.
-% NodeId is the node to which the request is sent.
-send_async_request(NodePid, Request) ->
-
-    gen_server:cast(NodePid, {Request, com:my_address()}).
-
 % Finds the K closest nodes in the network to a given HashID.
 % The function starts by querying the local routing table for potential candidates.
 % It then iteratively contacts nodes to refine the list of closest nodes.
@@ -427,7 +409,7 @@ find_k_nearest_node(HashID, _, K, [], ContactedNodes) ->
 find_k_nearest_node(HashID, Bucket_Size, K, [{NodeHash, NodePid}|T], ContactedNodes) ->
     % Log the node being contacted for debugging purposes.
     % Send a request to the node to find its closest nodes to the HashID.
-    case send_request(NodePid, {find_node, HashID}) of
+    case com:send_request(NodePid, {find_node, HashID}) of
         {ok, NodeList} ->
             % Filter the returned node list to exclude nodes already contacted or com:my_address.
             FilteredNodeList = lists:filter(
@@ -453,7 +435,7 @@ find_k_nearest_node(HashID, Bucket_Size, K, [{NodeHash, NodePid}|T], ContactedNo
 
 % Finds the value associated with a given key in the network.
 find_value(NodePid, Key) ->
-    case send_request(NodePid, {find_value, Key}) of
+    case com:send_request(NodePid, {find_value, Key}) of
         {ok, NodeList} when is_list(NodeList) -> 
             NodeList;
         {ok, Value} -> 
@@ -465,7 +447,7 @@ find_value(NodePid, Key) ->
 ping_node(NodePid) when is_list(NodePid) -> 
     ping_node(list_to_pid(NodePid));
 ping_node(NodePid) when is_pid(NodePid) ->
-    case send_request(NodePid, ping) of
+    case com:send_request(NodePid, ping) of
         {pong,ok} ->
             {pong,ok};
         % If the node is unreachable, the function returns pang.
@@ -481,7 +463,7 @@ store_value(Key, Value, RoutingTable, K, Bucket_Size) ->
     NodeList = find_k_nearest_node(RoutingTable, Key, KeyHashId, Bucket_Size, K),
     lists:foreach(
         fun({_NodeHashId, NodePid}) ->
-            send_async_request(NodePid, {store, Key, Value})
+            com:send_async_request(NodePid, {store, Key, Value})
         end,
         NodeList
     )
@@ -518,13 +500,10 @@ join_procedure_starter(NodesList, RoutingTable, K, K_Bucket_Size)->
     if EmptyBranches ->
         receive
         after 2000 ->
-            case send_request(com:my_address(),verbose) of
-                {ok, Verbose} -> utils:set_verbose(Verbose);
-                _ -> ok
-            end,
+            thread:check_verbose(),
             utils:debugPrint("Restarting join procedure to fill missing branches ~p~n", [com:my_address()]),
             [{BootstrapHash,Bootstrap}] = NodesList,
-            case send_request(Bootstrap, {find_node, BootstrapHash}) of
+            case com:send_request(Bootstrap, {find_node, BootstrapHash}) of
                 {ok, NodeList} ->
                     Length = length(NodeList),                    
                     Index = rand:uniform(Length),
@@ -575,7 +554,7 @@ join_procedure([{_,NodePid} | T], RoutingTable, K, K_Bucket_Size, ContactedNodes
             % The variable FilledBranches contains the branches that are already filled, 
             % allowing the receiver to ignore them and return only what's needed.
             utils:debugPrint("Contacting node ~p~n", [NodePid]),
-            case send_request(NodePid, {fill_my_routing_table, FilledBranches}) of
+            case com:send_request(NodePid, {fill_my_routing_table, FilledBranches}) of
                 {ok, {Branches}} -> 
                     utils:debugPrint("Done node ~p~n", [NodePid]),
                     % saving all the new nodes

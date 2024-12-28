@@ -1,7 +1,7 @@
 % -----------------------------------------------------------------------------
 % Module: analytics_collector
 % Author(s): Nunzio D'Amore, Francesco Rossi
-% Date: 2013-01-26
+% Date: 2024-12-26
 % Description: This module manages the analytics collector to collect analytics events
 % from running processes.
 % -----------------------------------------------------------------------------

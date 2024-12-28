@@ -1,7 +1,7 @@
 % -----------------------------------------------------------------------------
 % Module: utils
 % Author(s): Nunzio D'Amore, Francesco Rossi
-% Date: 2013-01-15
+% Date: 2024-12-15
 % Description: This module contains utility functions.
 % -----------------------------------------------------------------------------
 

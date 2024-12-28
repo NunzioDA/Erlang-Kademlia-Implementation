@@ -8,7 +8,8 @@
 -module(node).
 -behaviour(gen_server).
 -export([init/1, handle_call/3, handle_cast/2, terminate/2]).
--export([start/3, start/4, ping_node/1, store/3, find_value/2,  get_routing_table/1]).
+-export([start/3, start/4, ping_node/1, store_value/5]).
+-export([store/3, find_value/2,  get_routing_table/1, talk/1, shut/1]).
 
 
 % Starts a new node in the Kademlia network.
@@ -56,6 +57,9 @@ init([K, T, InitAsBootstrap, Verbose]) ->
         enroll_as_bootstrap()
     end,
 
+    RepublisherPid = republisher:start(ValuesTable, RoutingTable, K, T, Bucket_Size),
+    put(republisher, RepublisherPid),
+
     % Return the initialized state, containing ETS tables and configuration parameters.
     {ok, {RoutingTable, ValuesTable, K, T, Bucket_Size}}
 .
@@ -85,6 +89,11 @@ store(NodePid, Key, Value) ->
 find_value(NodePid, Key) ->
     com:send_request(NodePid, {find_value_net, Key}).
 
+talk(NodePid) ->
+    com:send_async_request(NodePid, {talk}).
+
+shut(NodePid) ->
+    com:send_async_request(NodePid, {shut}).
 % -----------------------------------------------------
 % BOOTSTRAP MANAGEMENT
 % -----------------------------------------------------
@@ -426,13 +435,19 @@ async_request_handler({store, Key, Value}, State) ->
     {noreply, State}
 ;
 async_request_handler({talk},State) ->
-    Verbose = utils:verbose(),
-    utils:set_verbose(not Verbose),
-    thread:set_verbose(not Verbose),
+    utils:set_verbose(true),
+    thread:set_verbose(true),
+    {noreply, State};
+async_request_handler({shut},State) ->
+    utils:set_verbose(false),
+    thread:set_verbose(false),
     {noreply, State}.
 
 terminate(_Reason, _State) ->
     utils:debugPrint("Node ~p is terminating.~n", [com:my_address()]),
+    RepublisherPid = get(republisher),
+    republisher:terminate(RepublisherPid),
+    thread:kill_all(),
     ok
 .
 
@@ -492,7 +507,7 @@ find_k_nearest_node(HashID, BucketSize, K, [{NodeHash, NodePid}|T], ContactedNod
 store_value(Key, Value, RoutingTable, K, Bucket_Size) ->
     KeyHashId = utils:k_hash(Key, K),
     NodeList = find_k_nearest_node(RoutingTable, KeyHashId, Bucket_Size, K),
-    utils:print("Node List ~p",[NodeList]),
+    utils:debugPrint("Publishing [~p,~p] to:~n~p~n",[Key, Value, NodeList]),
     lists:foreach(
         fun({_NodeHashId, NodePid}) ->
             com:send_async_request(NodePid, {put_value, Key, Value})

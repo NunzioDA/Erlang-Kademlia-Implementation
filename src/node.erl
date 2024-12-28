@@ -370,6 +370,8 @@ request_handler(ping, From, State) ->
     utils:debugPrint("Ping received ~p~n", [From]),
     % Reply with pong to indicate that the node is alive and reachable.
     {reply, {pong, ok}, State};
+% This function is used to find a value in the network 
+% from the shell
 request_handler({find_value_net, Key}, _, State) ->
     {_,_,K,_,_} = State,
     thread:start(
@@ -378,7 +380,7 @@ request_handler({find_value_net, Key}, _, State) ->
                 {value_not_found, empty} ->
                     utils:print("[~p] Value ~p not found~n", [com:my_address(), Key]);
                 {ok, _, Value} ->
-                    utils:print("[~p] Value found: ~p => ~p~n", [com:my_address(), Key, Value])
+                    utils:print("[~p] Value found:~n  ~p => ~p~n", [com:my_address(), Key, Value])
             end
         end   
     ),

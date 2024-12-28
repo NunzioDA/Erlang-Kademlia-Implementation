@@ -1,3 +1,10 @@
+% -----------------------------------------------------------------------------
+% Module: com
+% Author(s): Nunzio D'Amore, Francesco Rossi
+% Date: 2024-12-27
+% Description: This module manages the communication
+% -----------------------------------------------------------------------------
+
 -module(com).
 -export([save_address/1, my_address/0, send_request/2, send_async_request/2]).
 
@@ -20,7 +27,7 @@ send_request(NodePid, Request) when is_list(NodePid) ->
 send_request(NodePid, Request) when is_pid(NodePid) ->
     
     try
-        gen_server:call(NodePid, {Request, my_address()}, 5)
+        gen_server:call(NodePid, {Request, my_address()})
     catch _:Reason ->
         {error,Reason}
     end

@@ -88,7 +88,7 @@ join_procedure([{_,NodePid} | T], RoutingTable, K, K_Bucket_Size, ContactedNodes
             % The variable FilledBranches contains the branches that are already filled, 
             % allowing the receiver to ignore them and return only what's needed.
             utils:debug_print("Contacting node ~p~n", [NodePid]),
-            case com:send_request(NodePid, {fill_my_routing_table, FilledBranches}) of
+            case node:send_request(NodePid, {fill_my_routing_table, FilledBranches}) of
                 {ok, {Branches}} -> 
                     utils:debug_print("Done node ~p~n", [NodePid]),
                     % saving all the new nodes

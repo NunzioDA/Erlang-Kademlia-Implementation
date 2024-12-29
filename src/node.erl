@@ -169,10 +169,15 @@ save_node_request_handler(NodePid, RoutingTable, K, K_Bucket_Size) when is_list(
         % in that branch.
         [{BranchID, NodeList}] -> 
             % Check if the node is already in the list.
-            case lists:keyfind(NodeHashId, 1, NodeList) of
-                {_,_} ->
+            case lists:member({NodeHashId,NodePid}, NodeList) of
+                true ->
                     % If the node is already in the list, move it to the end
-                    RemovedNodeList = lists:filter(fun({ElementHash, _}) -> ElementHash /= NodeHashId end, NodeList),
+                    RemovedNodeList = lists:filter(
+                        fun({_, ElementPid}) -> 
+                            ElementPid /= NodePid 
+                        end, 
+                        NodeList
+                    ),
                     NewNodeList = RemovedNodeList ++ [{NodeHashId, NodePid}],
                     ets:insert(RoutingTable, {BranchID, NewNodeList});
                 % If the node is not in the list, add it to the tail.

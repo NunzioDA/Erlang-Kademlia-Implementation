@@ -75,7 +75,6 @@ get_unfinished_processes()->
 	FinishedTimes = ?MODULE:get_events(finished_join_procedure),
 
 	FilteredStartedTimes = [Pid || {Pid, _} <- StartedTimes, not lists:keymember(Pid, 1, FinishedTimes)],
-	utils:print("~p", [length(FilteredStartedTimes)]),
 	FilteredStartedTimes.
 
 get_started_join_processes() ->

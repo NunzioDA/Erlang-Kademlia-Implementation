@@ -134,9 +134,9 @@ verbose() ->
 % Used to print debugging messages
 % It only pints when verbosity is set to true
 debug_print(Format)->
-    ?MODULE:doItIfVerbose(fun() -> io:format(Format) end).
+    ?MODULE:do_it_if_verbose(fun() -> io:format(Format) end).
 debug_print(Format, Data)->
-    ?MODULE:doItIfVerbose(fun() -> io:format(Format, Data) end).
+    ?MODULE:do_it_if_verbose(fun() -> io:format(Format, Data) end).
 % This function implements the verbosity check
 do_it_if_verbose(Fun) ->
     Verbose = ?MODULE:verbose(),

@@ -171,7 +171,7 @@ save_node(NodePid, RoutingTable, K, K_Bucket_Size) when is_list(NodePid) ->
             case lists:keyfind(NodeHashId, 1, NodeList) of
                 {_,_} ->
                     % If the node is already in the list, move it to the end
-                    RemovedNodeList = lists:filter(fun(Element) -> Element =/= {NodeHashId, NodePid}end, NodeList),
+                    RemovedNodeList = lists:filter(fun({ElementHash, _}) -> ElementHash /= NodeHashId end, NodeList),
                     NewNodeList = RemovedNodeList ++ [{NodeHashId, NodePid}],
                     ets:insert(RoutingTable, {BranchID, NewNodeList});
                 % If the node is not in the list, add it to the tail.

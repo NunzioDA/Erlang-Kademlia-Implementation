@@ -12,12 +12,12 @@
 -module(thread).
 
 -export([start/1, check_verbose/0, set_verbose/1, kill_all/0, save_thread/1]).
--export([get_threads/0, send_message_to_my_threads/1]).
+-export([get_threads/0, send_message_to_my_threads/1, kill/1]).
 
 start(Function) ->
     ParentAddress = com:my_address(),
     Verbose = utils:verbose(),
-    Pid = spawn(
+    Pid = spawn_link(
         fun()->
             % Saving parent address and verbose in the new process
             % so it can behave like the parent
@@ -29,11 +29,15 @@ start(Function) ->
     ?MODULE:save_thread(Pid)
 .
 
+kill(Thread) ->
+    unlink(Thread),
+    exit(Thread, kill).
+
 kill_all()->
     Threads = ?MODULE:get_threads(),
     lists:foreach(
         fun(Thread) ->
-            exit(Thread, kill)
+            ?MODULE:kill(Thread)
         end,
         Threads
     )

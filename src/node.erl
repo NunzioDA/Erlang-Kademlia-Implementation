@@ -7,7 +7,7 @@
 
 -module(node).
 -behaviour(gen_server).
--export([init/1, handle_call/3, handle_cast/2, terminate/2]).
+-export([init/1, handle_call/3, handle_cast/2, terminate/2, kill/1]).
 -export([start/3, start/4, ping_node/1, store_value/5, save_node/1, send_request/2]).
 -export([store/3, find_value/2, get_routing_table/1, talk/1, shut/1, start_link/4, enroll_as_bootstrap/0]).
 -export([save_node/4, branch_lookup/2, find_node/7, find_node/4, get_value/3, request_handler/3, delete_node/3]).
@@ -93,6 +93,12 @@ talk(NodePid) ->
 
 shut(NodePid) ->
     com:send_async_request(NodePid, {shut}).
+
+% This command is used to kill a process
+kill(Pid) ->
+    % Unlinking so the parent is not killed
+    unlink(Pid),
+    exit(Pid, kill).
 % -----------------------------------------------------
 % BOOTSTRAP MANAGEMENT
 % -----------------------------------------------------

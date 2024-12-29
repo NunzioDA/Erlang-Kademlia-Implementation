@@ -9,9 +9,9 @@
 -module(analytics_collector).
 -behaviour(gen_server).
 
--export([init/1, handle_call/3, handle_cast/2, terminate/2, code_change/3]).
--export([start/0, enroll_bootstrap/1, get_bootstrap_list/0, started_join_procedure/1]).
--export([finished_join_procedure/1, join_procedure_mean_time/0, get_unfinished_processes/0]).
+-export([init/1, handle_call/3, handle_cast/2, terminate/2, code_change/3, listen_for/1, notify_listeners/2]).
+-export([start/0, enroll_bootstrap/1, get_bootstrap_list/0, started_join_procedure/1, get_started_join_processes/0]).
+-export([finished_join_procedure/1, join_procedure_mean_time/0, get_unfinished_processes/0, get_finished_join_processes/0]).
 -export([start_link/0, add/3, get_events/1, make_request/2, calculate_mean_time/2, register_new_event/3]).
 
 % --------------------------------
@@ -78,6 +78,12 @@ get_unfinished_processes()->
 	utils:print("~p", [length(FilteredStartedTimes)]),
 	FilteredStartedTimes.
 
+get_started_join_processes() ->
+	?MODULE:get_events(started_join_procedure).
+
+get_finished_join_processes() ->
+	?MODULE:get_events(finished_join_procedure).
+
 get_bootstrap_list() ->
 	lists:foldl(
 		fun({Pid,_}, Acc) ->
@@ -120,9 +126,20 @@ calculate_mean_time(StartedTimes, FinishedTimes) ->
 		0 -> 0;
 		_ -> TotalTime div Count
 	end.
-	
 
-%-------------------------------------------
+% ------------------------------------------
+% LISTENERS MANAGEMENT
+% ------------------------------------------
+listen_for(EventType) ->
+	utils:print("New Listener"),
+	Pid = self(),
+	ServerPid = whereis(analytics_collector),
+	gen_server:cast(ServerPid, {new_listener, Pid, EventType}).
+
+
+% -------------------------------------------	
+% GENERIC FUNCTIONS
+% -------------------------------------------
 % This function is the generic function used to add new events.
 add(ClientPid, EventType, Event) ->
 	?MODULE:make_request(cast, {new_event, ClientPid, EventType, Event})
@@ -133,6 +150,25 @@ get_events(EventType) ->
 	case ets:lookup(analytics, EventType) of
 		[{_, List}] -> List;
 		_ -> []
+	end.
+
+% This function is used to notify enrolled event listeners
+notify_listeners(EventType, Event) ->
+	case get(listeners) of
+		undefined -> 
+			ok;
+		ListenersMap ->
+			case maps:is_key(EventType, ListenersMap) of
+				true ->
+					EventListeners = maps:get(EventType, ListenersMap),
+					lists:foreach(
+						fun(Pid) ->
+							Pid ! {event_notification, EventType, Event}
+						end,
+						EventListeners
+					);
+				false -> ok
+			end
 	end.
 
 % This function allows to make a request to the analytics server
@@ -162,7 +198,21 @@ handle_call(_Request, _From, State) ->
 % This clause handle the registration of a generic event
 handle_cast({new_event, Pid, EventType, Event}, State) ->
 	?MODULE:register_new_event(Pid, EventType, Event),
+	{noreply, State};
+
+% This clause handle the registration of an event listener
+handle_cast({new_listener, Pid, EventType}, State) ->
+	ListenersMap = get(listeners),
+	if(ListenersMap == undefined) ->
+		put(listeners, #{EventType=>[Pid]});
+	true ->
+		EventListeners = maps:get(EventType, ListenersMap),
+		NewEventListeners = [Pid|EventListeners],
+		NewListenersMap = maps:put(EventType, NewEventListeners, ListenersMap),
+		put(listeners, NewListenersMap)
+	end,
 	{noreply, State}.
+
 % This function saves the event to the ets table
 % named analytics.
 register_new_event(Pid, EventType, Event) ->
@@ -173,7 +223,8 @@ register_new_event(Pid, EventType, Event) ->
 			ets:insert(analytics, {EventType, NewEventList});
 		[] ->
 			ets:insert(analytics, {EventType, [{Pid, Event}]})
-	end
+	end,
+	?MODULE:notify_listeners(EventType, {Pid, Event})
 .
 
 terminate(_Reason, _State) ->

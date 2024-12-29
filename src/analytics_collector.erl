@@ -3,13 +3,13 @@
 % Author(s): Nunzio D'Amore, Francesco Rossi
 % Date: 2024-12-26
 % Description: This module manages the analytics collector to collect analytics events
-% from running processes.
+% 			   from running processes.
 % -----------------------------------------------------------------------------
 
 -module(analytics_collector).
 -behaviour(gen_server).
 
--export([init/1, handle_call/3, handle_cast/2, terminate/2, code_change/3, listen_for/1, notify_listeners/2]).
+-export([init/1, handle_call/3, handle_cast/2, terminate/2, code_change/3, listen_for/1, notify_listeners/2, kill/0]).
 -export([start/0, enroll_bootstrap/1, get_bootstrap_list/0, started_join_procedure/1, get_started_join_processes/0]).
 -export([finished_join_procedure/1, join_procedure_mean_time/0, get_unfinished_processes/0, get_finished_join_processes/0]).
 -export([start_link/0, add/3, get_events/1, make_request/2, calculate_mean_time/2, register_new_event/3]).
@@ -31,7 +31,7 @@ start() ->
 	end.
 % This functions starts a gen_server process
 start_link() ->
-    {ok, Pid} = gen_server:start_link(?MODULE, [], []),
+    {ok, Pid} = gen_server:start(?MODULE, [], []),
     Pid
 .
 
@@ -232,3 +232,8 @@ terminate(_Reason, _State) ->
 code_change(_OldVsn, State, _Extra) ->
 	{ok, State}.
 
+kill() ->
+	case whereis(analytics_collector) of
+		undefined -> utils:print("There is not any instance of Analytic Collector running");
+		Pid -> exit(Pid, kill)
+	end.

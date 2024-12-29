@@ -10,9 +10,8 @@
 -export([init/1, handle_call/3, handle_cast/2, terminate/2]).
 -export([start/3, start/4, ping_node/1, store_value/5, save_node/1]).
 -export([store/3, find_value/2, get_routing_table/1, talk/1, shut/1, start_link/4, enroll_as_bootstrap/0]).
--export([save_node/4, branch_lookup/2, find_node/7, find_node/4, get_value/3, request_handler/3,
-         async_request_handler/2, find_k_nearest_node/5, find_value_implementation/3,
-         find_k_nearest_node/4, join/3]).
+-export([save_node/4, branch_lookup/2, find_node/7, find_node/4, get_value/3, request_handler/3]).
+-export([async_request_handler/2, find_k_nearest_node/5, find_value_implementation/3,find_k_nearest_node/4, join/3]).
 
 % Starts a new node in the Kademlia network.
 % K -> Number of bits to represent a node ID.

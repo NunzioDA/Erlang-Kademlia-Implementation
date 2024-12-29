@@ -6,11 +6,10 @@
 % -----------------------------------------------------------------------------
 
 - module(utils).
-- export([k_hash/2, get_subtree_index/2, xor_distance/2, sort_node_list/2, 
-    empty_branches/2, remove_duplicates/1, remove_contacted_nodes/2, print/1, print/2]).
-- export([to_bit_list/1, print_routing_table/2, debug_print/1, debug_print/2, 
-    verbose/0, set_verbose/1,most_significant_bit_index/1, most_significant_bit_index/2,
-    do_it_if_verbose/1]).
+- export([k_hash/2, get_subtree_index/2, xor_distance/2, sort_node_list/2]).
+- export([empty_branches/2, remove_duplicates/1, remove_contacted_nodes/2, print/1, print/2]).
+- export([to_bit_list/1, print_routing_table/2, debug_print/1, debug_print/2, do_it_if_verbose/1]).
+- export([verbose/0, set_verbose/1,most_significant_bit_index/1, most_significant_bit_index/2]).
 
 
 % This function is used to convert a bitstring into a list of bits.

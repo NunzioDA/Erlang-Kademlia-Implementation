@@ -10,7 +10,8 @@
 -behaviour(gen_server).
 
 -export([init/1, handle_call/3, handle_cast/2, terminate/2, code_change/3]).
--export([start/0, enroll_bootstrap/1, get_bootstrap_list/0, started_join_procedure/1, finished_join_procedure/1, join_procedure_mean_time/0, get_unfinished_processes/0]).
+-export([start/0, enroll_bootstrap/1, get_bootstrap_list/0, started_join_procedure/1]).
+-export([finished_join_procedure/1, join_procedure_mean_time/0, get_unfinished_processes/0]).
 -export([start_link/0, add/3, get_events/1, make_request/2, calculate_mean_time/2, register_new_event/3]).
 
 % --------------------------------

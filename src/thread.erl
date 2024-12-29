@@ -11,7 +11,8 @@
 
 -module(thread).
 
--export([start/1, check_verbose/0, set_verbose/1, kill_all/0, save_thread/1, get_threads/0, send_message_to_my_threads/1]).
+-export([start/1, check_verbose/0, set_verbose/1, kill_all/0, save_thread/1]).
+-export([get_threads/0, send_message_to_my_threads/1]).
 
 start(Function) ->
     ParentAddress = com:my_address(),

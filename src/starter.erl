@@ -8,6 +8,7 @@
 - module(starter).
 
 - export([start/0, registerShell/0, start_kademlia_network/4, test_dying_process/0, pick_random_pid/1]).
+- export([wait_for_network_to_converge/0, wait_for_progress/1]).
 % This function is used to start the simulation
 % It starts the analytics_collector and calls
 % the test function to start Bootstraps
@@ -44,22 +45,26 @@ start_kademlia_network(Bootstraps, Processes, K,T) ->
     ).
 
 test_dying_process() ->
+    analytics_collector:listen_for(finished_join_procedure),
     utils:print("Starting a Kademlia network with 1 bootstrap and 5 nodes~n"),
     utils:print("1 bit for the hash and 4000 millis for republishig~n"),
-    start_kademlia_network(1, 5, 1, 4000),
+    ?MODULE:start_kademlia_network(1, 1000, 5, 4000),
     [BootstrapNode|_] = analytics_collector:get_bootstrap_list(),
 
-    utils:print("Waiting some time to let the network converge~n"),
-    timer:sleep(2000),
+    utils:print("Waiting for the network to converge~n"),
+    ?MODULE:wait_for_network_to_converge(),
     {ok, RoutingTable} = node:get_routing_table(BootstrapNode),
-    % Pick a random pid from the routing table
-    RandomPid = ?MODULE:pick_random_pid(RoutingTable),
 
     utils:print("Current routing table of the bootstrap node [~p] : ~n~p~n",[BootstrapNode,RoutingTable]),
+
+    % Pick a random pid from the routing table
+    RandomPid = ?MODULE:pick_random_pid(RoutingTable),
     utils:print("Killing a random process in the network [~p]~n",[RandomPid]),
     node:kill(RandomPid),
+
     utils:print("Asking bootstrap to store value so it tryes to contact [~p]~n",[RandomPid]),
     node:store(BootstrapNode,"foo", 0),
+    timer:sleep(2000),
     {ok, NewRoutingTable} = node:get_routing_table(BootstrapNode),
     utils:print("New routing table of the bootstrap node [~p] : ~n~p~n",[BootstrapNode,NewRoutingTable])
 .
@@ -73,4 +78,39 @@ pick_random_pid(RoutingTable) ->
         _ ->
             {_, RandomPid} = lists:nth(rand:uniform(length(NodeList)), NodeList),
             RandomPid
+    end.
+
+
+wait_for_network_to_converge() ->    
+    wait_for_progress(
+        fun() ->
+            Unfinished = analytics_collector:get_unfinished_processes(),
+            if length(Unfinished) > 0 ->
+                receive
+                    {event_notification, _, _} ->
+                        Started = analytics_collector:get_started_join_processes(),
+                        Finished = analytics_collector:get_finished_join_processes(),
+                        Progress = length(Finished) / length(Started),
+                        Progress
+                after 5000 ->
+                    utils:print("NOTHING RECEIVE"),
+                    1
+                end;
+            true -> 1
+            end
+        end
+    ),
+    utils:print("~n").
+
+% This function is used to wait for a task to end
+% visualizing a progress bar based on Progress.
+% Progress is a function used to compute the current progress.
+% The function ends when Progress reaches 1.
+wait_for_progress(Progress) -> 
+    CurrentProgress = Progress(),
+    utils:print_progress(CurrentProgress),
+    if CurrentProgress == 1 ->
+        ok;
+    true ->
+        wait_for_progress(Progress)
     end.

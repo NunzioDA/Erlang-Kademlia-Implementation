@@ -8,9 +8,9 @@
 -module(node).
 -behaviour(gen_server).
 -export([init/1, handle_call/3, handle_cast/2, terminate/2]).
--export([start/3, start/4, ping_node/1, store_value/5, save_node/1]).
+-export([start/3, start/4, ping_node/1, store_value/5, save_node/1, send_request/2]).
 -export([store/3, find_value/2, get_routing_table/1, talk/1, shut/1, start_link/4, enroll_as_bootstrap/0]).
--export([save_node/4, branch_lookup/2, find_node/7, find_node/4, get_value/3, request_handler/3]).
+-export([save_node/4, branch_lookup/2, find_node/7, find_node/4, get_value/3, request_handler/3, delete_node/3]).
 -export([async_request_handler/2, find_k_nearest_node/5, find_value_implementation/3,find_k_nearest_node/4, join/3]).
 
 % Starts a new node in the Kademlia network.
@@ -35,6 +35,8 @@ start_link(K, T, InitAsBootstrap, Verbose) ->
 % - RoutingTable: Used to store the routing information of the node.
 % - ValuesMap: Used to store key-value pairs managed by the node.
 init([K, T, InitAsBootstrap, Verbose]) ->
+    % Trapping exit so we can catch exit messages
+    % process_flag(trap_exit, true),
     com:save_address(self()),
     utils:set_verbose(Verbose),
     % Generate a unique integer to create distinct ETS table names for each node.
@@ -84,7 +86,7 @@ store(NodePid, Key, Value) ->
     com:send_async_request(NodePid, {store, Key, Value}).
 
 find_value(NodePid, Key) ->
-    com:send_request(NodePid, {find_value_net, Key}).
+    ?MODULE:send_request(NodePid, {find_value_net, Key}).
 
 talk(NodePid) ->
     com:send_async_request(NodePid, {talk}).
@@ -175,6 +177,19 @@ save_node(NodePid, RoutingTable, K, K_Bucket_Size) when is_list(NodePid) ->
                     end
             end
     end.
+
+delete_node(NodePid, RoutingTable, K) when is_pid(NodePid) ->
+    delete_node(pid_to_list(NodePid), RoutingTable, K);
+delete_node(NodePid, RoutingTable, K) when is_list(NodePid)->
+    NodeHashId = utils:k_hash(NodePid, K),
+    BranchID = utils:get_subtree_index(NodeHashId, com:my_hash_id(K)),
+    case ets:lookup(RoutingTable, BranchID) of
+        [{BranchID, NodeList}] ->
+            NewNodeList = lists:filter(fun({_, Pid}) -> Pid =/= NodePid end, NodeList),
+            ets:insert(RoutingTable, {BranchID, NewNodeList});
+        [] -> ok
+    end.
+
 
 % This function is used to lookup for the nodes list in a branch.
 branch_lookup(RoutingTable, BranchId) ->
@@ -389,6 +404,16 @@ handle_cast({save_node, NodePid}, State) ->
     {RoutingTable, _, K, _, Bucket_Size} = State,
     ?MODULE:save_node(NodePid, RoutingTable, K, Bucket_Size),
     {noreply, State};
+handle_cast({{delete_node,NodePid}, SenderPid}, State) ->
+    {RoutingTable, _, K, _, _} = State,
+    MyAddress = com:my_address(),
+    if SenderPid == MyAddress ->
+        ?MODULE:delete_node(NodePid, RoutingTable, K);
+    true ->
+        ok
+    end,
+    {noreply, State};
+
 handle_cast({Request, SenderPid}, State) when is_tuple(Request) ->
     ?MODULE:save_node(SenderPid),
     ?MODULE:async_request_handler(Request, State).
@@ -424,17 +449,31 @@ async_request_handler({shut},State) ->
     thread:set_verbose(false),
     {noreply, State}.
 
-terminate(_Reason, _State) ->
-    utils:debug_print("Node ~p is terminating.~n", [com:my_address()]),
-    RepublisherPid = get(republisher),
-    republisher:terminate(RepublisherPid),
-    thread:kill_all(),
+terminate(Reason, _State) ->
+    utils:debug_print("Node ~p is terminating for reason: ~p.~n", [com:my_address(), Reason]),
     ok.
+
+% handle_info({'EXIT', FromPid, Reason}, State) ->
+%     io:format("Ricevuto segnale di uscita da ~p con motivo ~p~n", [FromPid, Reason]),
+%     % Esegui un cleanup o altre operazioni
+%     {noreply, State}.
 
 %----------------------------------------------
 %  NODE AS A CLIENT
 %----------------------------------------------
 %
+send_request(Pid,Request) -> 
+    case com:send_request(Pid, Request) of
+        {error, Reason} ->
+            ShellPid = whereis(shellPid),
+            if ShellPid /= self()->
+                com:send_async_request(com:my_address(),{delete_node, Pid});                
+            true->
+                ok
+            end,
+            {error,Reason};
+        Response -> Response
+    end.
 % Finds the K closest nodes in the network to a given HashID.
 % The function starts by querying the local routing table for potential candidates.
 % It then recoursively contacts nodes to refine the list of closest nodes.
@@ -455,7 +494,7 @@ find_k_nearest_node(HashID, BucketSize, _, [], ContactedNodes) ->
 find_k_nearest_node(HashID, BucketSize, K, [{NodeHash, NodePid}|T], ContactedNodes) ->
     % Log the node being contacted for debugging purposes.
     % Send a request to the node to find its closest nodes to the HashID.
-    case com:send_request(NodePid, {find_node, HashID}) of
+    case ?MODULE:send_request(NodePid, {find_node, HashID}) of
         {ok, NodeList} ->
             % Filter the returned node list to exclude nodes already contacted or com:my_address.
             FilteredNodeList = lists:filter(
@@ -497,7 +536,7 @@ store_value(Key, Value, RoutingTable, K, Bucket_Size) ->
 find_value_implementation(_, [], _) ->
     {value_not_found, empty};
 find_value_implementation(Key, [{_, Pid} | T], ContactedNodes) ->
-    case com:send_request(Pid, {find_value, Key}) of
+    case ?MODULE:send_request(Pid, {find_value, Key}) of
         {nodes_list, NodeList} ->
             NewContactedNodes = [Pid | ContactedNodes],
             NewNodeList = utils:remove_contacted_nodes(NodeList, NewContactedNodes),

@@ -48,9 +48,20 @@ kill_all()->
 check_verbose() ->
     receive
         {verbose, Verbose} ->
-            utils:set_verbose(Verbose)
+            % Discard any consecutive verbose messages and take only the last one
+            LastVerbose = receiveLastVerbose(Verbose),
+            utils:set_verbose(LastVerbose)
     after 0 ->
         ok
+    end
+.
+% This function flushes every message except the last one
+receiveLastVerbose(LastVerbose) ->
+    receive
+        {verbose, NewVerbose} ->
+            receiveLastVerbose(NewVerbose)
+    after 0 ->
+        LastVerbose
     end
 .
 

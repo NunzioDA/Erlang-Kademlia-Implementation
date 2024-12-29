@@ -1,7 +1,7 @@
 % -----------------------------------------------------------------------------
 % Module: node
 % Author(s): Nunzio D'Amore, Francesco Rossi
-% Date: 2024-12-15
+% Date: 2024-12-20
 % Description: This module manages the node behaviour.
 % -----------------------------------------------------------------------------
 
@@ -27,7 +27,7 @@ start(K, T, InitAsBootstrap, Verbose) ->
 % Starts the node process.
 % gen_server:start_link/3 calls init/1, who takes in input [K, T].
 start_link(K, T, InitAsBootstrap, Verbose) ->
-    {ok, Pid} = gen_server:start_link(?MODULE, [K, T, InitAsBootstrap, Verbose], []),
+    {ok, Pid} = gen_server:start(?MODULE, [K, T, InitAsBootstrap, Verbose], []),
     Pid.
 
 % Initializes the state of the node when it is created.
@@ -52,6 +52,7 @@ init([K, T, InitAsBootstrap, Verbose]) ->
     Bucket_Size = 20,
 
     if not InitAsBootstrap ->
+        analytics_collector:enroll_process(com:my_address()),
         ?MODULE:join(RoutingTable, K, Bucket_Size);
     true ->
         ?MODULE:enroll_as_bootstrap()
@@ -74,43 +75,31 @@ init([K, T, InitAsBootstrap, Verbose]) ->
 % This function is used for debugging purposess
 % allowing to print the routing table in the shell
 % sending a routing_table request to the given Pid
-get_routing_table(NodePid) when is_list(NodePid) ->
-    ?MODULE:get_routing_table(list_to_pid(NodePid));
 get_routing_table(NodePid) when is_pid(NodePid)->
     try
-        gen_server:call(NodePid, {routing_table}, 50000)
+        gen_server:call(NodePid, {routing_table}, 120000)
     catch 
         Err -> utils:debug_print("~p",[Err])
     end.
 % This function is used to make the node start the store
 % procedure, contacting the nearest node to the value
-store(NodePid, Key, Value) when is_list(NodePid) ->
-    ?MODULE:store(list_to_pid(NodePid), Key, Value);
 store(NodePid, Key, Value) when is_pid(NodePid)->
     com:send_async_request(NodePid, {store, Key, Value}).
 
 % This function is used to make the node start the find_value
 % procedure, contacting the nearest node to the value
-find_value(NodePid, Key) when is_list(NodePid) ->
-    ?MODULE:find_value(list_to_pid(NodePid), Key);
 find_value(NodePid, Key) when is_pid(NodePid) ->
     ?MODULE:send_request(NodePid, {find_value_net, Key}).
 
 % This function is used to change the node verbosity to true
-talk(NodePid) when is_list(NodePid) ->
-    ?MODULE:talk(list_to_pid(NodePid));
 talk(NodePid) when is_pid(NodePid)->
     com:send_async_request(NodePid, {talk}).
 
 % This function is used to change the node verbosity to false
-shut(NodePid) when is_list(NodePid) ->
-    ?MODULE:shut(list_to_pid(NodePid));
 shut(NodePid) when is_pid(NodePid) ->
     com:send_async_request(NodePid, {shut}).
 
 % This command is used to kill a process
-kill(Pid) when is_list(Pid) ->
-    kill(list_to_pid(Pid));
 kill(Pid) when is_pid(Pid) ->
     % Unlinking so the parent is not killed
     unlink(Pid),
@@ -134,10 +123,9 @@ enroll_as_bootstrap() ->
 % for the call handling functions or else it would cause a timeout.
 save_node(NodePid) -> 
     MyPid = com:my_address(),
-    StringPid = pid_to_list(MyPid),
 
     % Save node avoids saving its own pid or the shell pid 
-    if NodePid /= MyPid, NodePid /= StringPid ->
+    if NodePid /= MyPid ->
         ShellPid = whereis(shellPid),
         if NodePid /= ShellPid, NodePid /= undefined ->
             % gen_server:cast is used so save_node is not blocking
@@ -152,8 +140,6 @@ save_node(NodePid) ->
 % RoutingTable: the table where store the information.
 % K: The number of bits used for the node's hash_id representation.
 save_node_request_handler(NodePid, RoutingTable, K, K_Bucket_Size) when is_pid(NodePid) ->
-    ?MODULE:save_node_request_handler(pid_to_list(NodePid), RoutingTable, K, K_Bucket_Size);
-save_node_request_handler(NodePid, RoutingTable, K, K_Bucket_Size) when is_list(NodePid) ->
     NodeHashId = utils:k_hash(NodePid, K),
     % Determine the branch ID in the routing table corresponding to the hash ID.
     BranchID = utils:get_subtree_index(NodeHashId, com:my_hash_id(K)),
@@ -207,9 +193,8 @@ save_node_request_handler(NodePid, RoutingTable, K, K_Bucket_Size) when is_list(
             end
     end.
 
-delete_node(NodePid, RoutingTable, K) when is_pid(NodePid) ->
-    delete_node(pid_to_list(NodePid), RoutingTable, K);
-delete_node(NodePid, RoutingTable, K) when is_list(NodePid)->
+% This function delete a node from the routing table
+delete_node(NodePid, RoutingTable, K) when is_pid(NodePid)->
     NodeHashId = utils:k_hash(NodePid, K),
     BranchID = utils:get_subtree_index(NodeHashId, com:my_hash_id(K)),
     case ets:lookup(RoutingTable, BranchID) of
@@ -322,6 +307,7 @@ handle_call({routing_table}, _From, State) ->
 % The sending node of the request is stored in the recipient's routing table.
 handle_call({Request, SenderPid}, _, State) ->  
     % Save the sender node in the routing table.
+    utils:debug_print("Handling ~p", [Request]),
     ?MODULE:save_node(SenderPid),
     ?MODULE:request_handler(Request, SenderPid, State).
 
@@ -356,7 +342,7 @@ request_handler({fill_my_routing_table, FilledIndexes}, ClientPid, State) ->
     {RoutingTable, _, K, _, Bucket_Size} = State,
     % First the server finds all the branches that it shares with the client
     % making the filling procedue more efficient.
-    ClientHash = utils:k_hash(pid_to_list(ClientPid), K),
+    ClientHash = utils:k_hash(ClientPid, K),
     SubTreeIndex = utils:get_subtree_index(com:my_hash_id(K), ClientHash),
 
     AllBranches = lists:seq(1, SubTreeIndex + 1),
@@ -431,6 +417,7 @@ request_handler(_, _, State) ->
 % When a save_node request is received save_node is called
 handle_cast({save_node, NodePid}, State) ->
     {RoutingTable, _, K, _, Bucket_Size} = State,
+    utils:debug_print("Handling ~p", [{save_node}]),
     ?MODULE:save_node_request_handler(NodePid, RoutingTable, K, Bucket_Size),
     {noreply, State};
 handle_cast({{delete_node,NodePid}, SenderPid}, State) ->
@@ -444,6 +431,7 @@ handle_cast({{delete_node,NodePid}, SenderPid}, State) ->
     {noreply, State};
 
 handle_cast({Request, SenderPid}, State) when is_tuple(Request) ->
+    utils:debug_print("Handling ~p", [Request]),
     ?MODULE:save_node(SenderPid),
     ?MODULE:async_request_handler(Request, State).
 
@@ -530,7 +518,7 @@ find_k_nearest_node(HashID, BucketSize, K, [{NodeHash, NodePid}|T], ContactedNod
                 fun(Node) -> 
                     {_, FilterPid} = Node,
                     not lists:member(Node, ContactedNodes) andalso
-                    FilterPid /= pid_to_list(com:my_address())
+                    FilterPid /= com:my_address()
                 end, 
                 NodeList
             ),
@@ -576,8 +564,6 @@ find_value_implementation(Key, [{_, Pid} | T], ContactedNodes) ->
     end.
 
 % Pings a specific node (NodePid) to check its availability.
-ping_node(NodePid) when is_list(NodePid) -> 
-    ?MODULE:ping_node(list_to_pid(NodePid));
 ping_node(NodePid) when is_pid(NodePid) ->
     case com:send_request(NodePid, ping) of
         {pong,ok} ->

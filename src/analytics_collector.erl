@@ -9,10 +9,10 @@
 -module(analytics_collector).
 -behaviour(gen_server).
 
--export([init/1, handle_call/3, handle_cast/2, terminate/2, code_change/3, listen_for/1, notify_listeners/2, kill/0]).
--export([start/0, enroll_bootstrap/1, get_bootstrap_list/0, started_join_procedure/1, get_started_join_processes/0]).
+-export([init/1, handle_call/3, handle_cast/2, listen_for/1, notify_listeners/2, kill/0, enroll_process/1]).
+-export([start/0, enroll_bootstrap/1, get_bootstrap_list/0, get_processes_list/0, started_join_procedure/1, get_started_join_processes/0, flush_join_events/0]).
 -export([finished_join_procedure/1, join_procedure_mean_time/0, get_unfinished_processes/0, get_finished_join_processes/0]).
--export([start_link/0, add/3, get_events/1, make_request/2, calculate_mean_time/2, register_new_event/3]).
+-export([start_link/0, add/3, get_events/1, make_request/2, calculate_mean_time/2, register_new_event/3, empty_event_list/1]).
 
 % --------------------------------
 % Starting methods
@@ -56,6 +56,9 @@ finished_join_procedure(Pid) ->
 
 enroll_bootstrap(Pid) ->
 	?MODULE:add(Pid, bootstrap, 1).
+enroll_process(Pid)->
+	?MODULE:add(Pid, processes, 1).
+
 %
 %------------------------------------
 % Results management
@@ -69,13 +72,19 @@ join_procedure_mean_time() ->
 
 	MeanTime = ?MODULE:calculate_mean_time(StartedTimes, FinishedTimes),
 	MeanTime.
-
+% This function return all the processes that haven't finished the
+% join procedure
 get_unfinished_processes()->
 	StartedTimes = ?MODULE:get_events(started_join_procedure),
 	FinishedTimes = ?MODULE:get_events(finished_join_procedure),
 
 	FilteredStartedTimes = [Pid || {Pid, _} <- StartedTimes, not lists:keymember(Pid, 1, FinishedTimes)],
 	FilteredStartedTimes.
+
+% This function flushes the join procedure results
+flush_join_events() ->
+	empty_event_list(started_join_procedure),
+	empty_event_list(finished_join_procedure).
 
 get_started_join_processes() ->
 	?MODULE:get_events(started_join_procedure).
@@ -92,6 +101,15 @@ get_bootstrap_list() ->
 		?MODULE:get_events(bootstrap)
 	).
 
+get_processes_list() ->
+		lists:foldl(
+		fun({Pid,_}, Acc) ->
+			[Pid|Acc]
+		end,
+		[],
+		?MODULE:get_events(processes)
+	).
+
 % This function is used to compute the mean time based on two
 % lists, the start time and the end time.
 % Each list is a list of tuples {Pid, time}
@@ -99,15 +117,15 @@ calculate_mean_time(StartedTimes, FinishedTimes) ->
 	FilteredStartedTimes = [{Pid, Time} || {Pid, Time} <- StartedTimes, lists:keymember(Pid, 1, FinishedTimes)],
 
 	SortedStart = lists:sort(
-		fun({Key1, _}, {Key2, _}) ->
-			Key1 > Key2
+		fun({_, Pid1}, {_, Pid2}) ->
+			Pid1 > Pid2
 		end,
 		FilteredStartedTimes
 	),
 
 	SortedFinish = lists:sort(
-		fun({Key1, _}, {Key2, _}) ->
-			Key1 > Key2
+		fun({_, Pid1}, {_, Pid2}) ->
+			Pid1 > Pid2
 		end,
 		FinishedTimes
 	),
@@ -130,7 +148,6 @@ calculate_mean_time(StartedTimes, FinishedTimes) ->
 % LISTENERS MANAGEMENT
 % ------------------------------------------
 listen_for(EventType) ->
-	utils:print("New Listener"),
 	Pid = self(),
 	ServerPid = whereis(analytics_collector),
 	gen_server:cast(ServerPid, {new_listener, Pid, EventType}).
@@ -212,6 +229,9 @@ handle_cast({new_listener, Pid, EventType}, State) ->
 	end,
 	{noreply, State}.
 
+empty_event_list(EventType) ->
+	ets:insert(analytics, {EventType, []}).
+
 % This function saves the event to the ets table
 % named analytics.
 register_new_event(Pid, EventType, Event) ->
@@ -226,11 +246,6 @@ register_new_event(Pid, EventType, Event) ->
 	?MODULE:notify_listeners(EventType, {Pid, Event})
 .
 
-terminate(_Reason, _State) ->
-	ok.
-
-code_change(_OldVsn, State, _Extra) ->
-	{ok, State}.
 
 kill() ->
 	case whereis(analytics_collector) of

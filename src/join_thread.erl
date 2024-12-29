@@ -3,7 +3,7 @@
 % Author(s): Nunzio D'Amore, Francesco Rossi
 % Date: 2024-12-28
 % Description: This module manages the behaviour of the thread that allows a node
-% to join the kademlia network.
+%              to join the kademlia network.
 % -----------------------------------------------------------------------------
 %
 %
@@ -42,15 +42,14 @@ join_procedure_starter(RoutingTable, K, K_Bucket_Size)->
     utils:debug_print("Starting join procedure to fill missing branches ~p~n", [com:my_address()]),
     
     BootstrapPid = ?MODULE:pick_bootstrap(),
-    BootstrapHash = utils:k_hash(pid_to_list(BootstrapPid), K),
+    BootstrapHash = utils:k_hash(BootstrapPid, K),
     ?MODULE:join_procedure([{BootstrapHash, BootstrapPid}], RoutingTable, K, K_Bucket_Size, []),
 
+    % Restart join procedure if there are empty branches
     EmptyBranches = utils:empty_branches(RoutingTable, K),
     if EmptyBranches ->
-        receive
-        after 2000 ->
-            ?MODULE:join_procedure_starter(RoutingTable, K, K_Bucket_Size)
-        end;
+        timer:sleep(2000),
+        ?MODULE:join_procedure_starter(RoutingTable, K, K_Bucket_Size);
     true -> ok
     end
 .
@@ -60,8 +59,8 @@ join_procedure_starter(RoutingTable, K, K_Bucket_Size)->
 join_procedure([], _,_,_,_) ->
     ok;
 join_procedure([{_,NodePid} | T], RoutingTable, K, K_Bucket_Size, ContactedNodes) ->
-    MyStringPid = pid_to_list(com:my_address()),
-    if NodePid /= MyStringPid ->
+    MyPid = com:my_address(),
+    if NodePid /= MyPid ->
         % The first node is saved
         node:save_node(NodePid),
 
@@ -105,8 +104,16 @@ join_procedure([{_,NodePid} | T], RoutingTable, K, K_Bucket_Size, ContactedNodes
                     FilteredNewContactList = utils:remove_duplicates(RemovedContacted),
                     SortedNewContactList = utils:sort_node_list(FilteredNewContactList, com:my_hash_id(K)),
                 
-
-                    ?MODULE:join_procedure(SortedNewContactList, RoutingTable, K, K_Bucket_Size, NewContactedNodesList);
+                    % Dont stop contacting known nodes until there 
+                    % are no empty branches
+                    %%% HalfBucket = K_Bucket_Size div 2,
+                    %%% BranchesWithLessThenHalf = utils:branches_with_less_then(RoutingTable, HalfBucket, K),
+                    EmptyBranches = utils:empty_branches(RoutingTable, K),
+                    if EmptyBranches ->
+                        ?MODULE:join_procedure(SortedNewContactList, RoutingTable, K, K_Bucket_Size, NewContactedNodesList);
+                    true->
+                        ok
+                    end;
                 Error -> 
                     utils:debug_print("Error occurred ~p~n", [Error]),
                     ?MODULE:join_procedure(T, RoutingTable, K, K_Bucket_Size, [NodePid|ContactedNodes])

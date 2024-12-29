@@ -1,14 +1,14 @@
 % -----------------------------------------------------------------------------
 % Module: starter
 % Author(s): Nunzio D'Amore, Francesco Rossi
-% Date: 2024-12-15
+% Date: 2024-12-20
 % Description: This module starts the kademlia network simulation.
 % -----------------------------------------------------------------------------
 
 - module(starter).
 
 - export([start/0, registerShell/0, start_kademlia_network/4, test_dying_process/0, pick_random_pid/1]).
-- export([wait_for_network_to_converge/0, wait_for_progress/1]).
+- export([wait_for_network_to_converge/0, wait_for_progress/1, destroy/0, flush_finished/0]).
 % This function is used to start the simulation
 % It starts the analytics_collector and calls
 % the test function to start Bootstraps
@@ -45,14 +45,23 @@ start_kademlia_network(Bootstraps, Processes, K,T) ->
     ).
 
 test_dying_process() ->
+    BootstrapNodes = 10,
+    Nodes = 3000,
+    K = 5,
+    T = 4000,
+
     analytics_collector:listen_for(finished_join_procedure),
-    utils:print("Starting a Kademlia network with 1 bootstrap and 5 nodes~n"),
-    utils:print("1 bit for the hash and 4000 millis for republishig~n"),
-    ?MODULE:start_kademlia_network(1, 1000, 5, 4000),
+    utils:print("Starting a Kademlia network with ~p bootstrap and ~p nodes~n", [BootstrapNodes,Nodes]),
+    utils:print("1 bit for the hash and 4000 millis for republishig~n~n"),
+    ?MODULE:start_kademlia_network(BootstrapNodes, Nodes, K, T),
     [BootstrapNode|_] = analytics_collector:get_bootstrap_list(),
+
+    node:talk(BootstrapNode),
 
     utils:print("Waiting for the network to converge~n"),
     ?MODULE:wait_for_network_to_converge(),
+    
+    utils:print("Requiring routing table to the bootstrapnode[~p]...~n",[BootstrapNode]),
     {ok, RoutingTable} = node:get_routing_table(BootstrapNode),
 
     utils:print("Current routing table of the bootstrap node [~p] : ~n~p~n",[BootstrapNode,RoutingTable]),
@@ -80,7 +89,13 @@ pick_random_pid(RoutingTable) ->
             RandomPid
     end.
 
-
+flush_finished()->
+    receive
+        {event_notification, _, Event} ->
+            utils:print("~p~n", [Event])
+    after 5000 ->
+        1
+    end.
 wait_for_network_to_converge() ->    
     wait_for_progress(
         fun() ->
@@ -92,8 +107,7 @@ wait_for_network_to_converge() ->
                         Finished = analytics_collector:get_finished_join_processes(),
                         Progress = length(Finished) / length(Started),
                         Progress
-                after 5000 ->
-                    utils:print("NOTHING RECEIVE"),
+                after 50000 ->
                     1
                 end;
             true -> 1
@@ -114,3 +128,13 @@ wait_for_progress(Progress) ->
     true ->
         wait_for_progress(Progress)
     end.
+
+destroy() ->
+    AllProcesses = analytics_collector:get_processes_list(),
+    lists:foreach(
+        fun(Pid)->
+            exit(Pid, kill)
+        end,
+        AllProcesses
+    ),
+    analytics_collector:kill().

@@ -1,7 +1,7 @@
 % -----------------------------------------------------------------------------
 % Module: utils
 % Author(s): Nunzio D'Amore, Francesco Rossi
-% Date: 2024-12-15
+% Date: 2024-12-20
 % Description: This module contains utility functions.
 % -----------------------------------------------------------------------------
 
@@ -9,7 +9,7 @@
 - export([k_hash/2, get_subtree_index/2, xor_distance/2, sort_node_list/2, print_progress/1]).
 - export([empty_branches/2, remove_duplicates/1, remove_contacted_nodes/2, print/1, print/2]).
 - export([to_bit_list/1, print_routing_table/2, debug_print/1, debug_print/2, do_it_if_verbose/1]).
-- export([verbose/0, set_verbose/1,most_significant_bit_index/1, most_significant_bit_index/2]).
+- export([verbose/0, set_verbose/1,most_significant_bit_index/1, most_significant_bit_index/2, branches_with_less_then/3]).
 
 
 % This function is used to convert a bitstring into a list of bits.
@@ -26,6 +26,8 @@ to_bit_list(<<Bit:1/bits, Rest/bits>>) ->
 
 
 % This function is used to create a K-bit hash from a given data.
+k_hash(Data, K) when is_pid(Data) ->
+    k_hash(pid_to_list(Data), K);
 k_hash(Data, K) when is_integer(K), K > 0 -> 
     Hash = crypto:hash(sha256, Data),
     % Takes the first K bits of the hash
@@ -95,6 +97,17 @@ empty_branches(RoutingTable, K) ->
     Tab2List = ets:tab2list(RoutingTable),
     length(Tab2List) < K.
 
+branches_with_less_then(RoutingTable, MinElems, K) ->
+    Tab2List = ets:tab2list(RoutingTable),
+    ControlList = lists:filter(
+        fun({_, NodeList}) ->
+           length(NodeList) < MinElems 
+        end,
+        Tab2List    
+    ),
+    length(ControlList) < K.
+
+
 % Debugging function to print the routing table of the node.
 print_routing_table(RoutingTable, MyHash) ->
     ets:tab2list(RoutingTable),
@@ -156,5 +169,5 @@ print_progress(ProgressRatio) ->
               ++ lists:duplicate(IncompleteLength, $\s) 
               ++ "] " 
               ++ integer_to_list(Progress) ++ "%",
-    io:format("\r~s", [Bar]),
+    io:format("\r~s  ", [Bar]),
     ok.

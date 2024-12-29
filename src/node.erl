@@ -74,7 +74,9 @@ init([K, T, InitAsBootstrap, Verbose]) ->
 % This function is used for debugging purposess
 % allowing to print the routing table in the shell
 % sending a routing_table request to the given Pid
-get_routing_table(NodePid) ->
+get_routing_table(NodePid) when is_list(NodePid) ->
+    ?MODULE:get_routing_table(list_to_pid(NodePid));
+get_routing_table(NodePid) when is_pid(NodePid)->
     try
         gen_server:call(NodePid, {routing_table}, 50000)
     catch 
@@ -82,23 +84,38 @@ get_routing_table(NodePid) ->
     end.
 % This function is used to make the node start the store
 % procedure, contacting the nearest node to the value
-store(NodePid, Key, Value) ->
+store(NodePid, Key, Value) when is_list(NodePid) ->
+    ?MODULE:store(list_to_pid(NodePid), Key, Value);
+store(NodePid, Key, Value) when is_pid(NodePid)->
     com:send_async_request(NodePid, {store, Key, Value}).
 
-find_value(NodePid, Key) ->
+% This function is used to make the node start the find_value
+% procedure, contacting the nearest node to the value
+find_value(NodePid, Key) when is_list(NodePid) ->
+    ?MODULE:find_value(list_to_pid(NodePid), Key);
+find_value(NodePid, Key) when is_pid(NodePid) ->
     ?MODULE:send_request(NodePid, {find_value_net, Key}).
 
-talk(NodePid) ->
+% This function is used to change the node verbosity to true
+talk(NodePid) when is_list(NodePid) ->
+    ?MODULE:talk(list_to_pid(NodePid));
+talk(NodePid) when is_pid(NodePid)->
     com:send_async_request(NodePid, {talk}).
 
-shut(NodePid) ->
+% This function is used to change the node verbosity to false
+shut(NodePid) when is_list(NodePid) ->
+    ?MODULE:shut(list_to_pid(NodePid));
+shut(NodePid) when is_pid(NodePid) ->
     com:send_async_request(NodePid, {shut}).
 
 % This command is used to kill a process
-kill(Pid) ->
+kill(Pid) when is_list(Pid) ->
+    kill(list_to_pid(Pid));
+kill(Pid) when is_pid(Pid) ->
     % Unlinking so the parent is not killed
     unlink(Pid),
     exit(Pid, kill).
+
 % -----------------------------------------------------
 % BOOTSTRAP MANAGEMENT
 % -----------------------------------------------------

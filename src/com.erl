@@ -23,8 +23,6 @@ my_address() ->
 
 % This function is used to send synchronous requests to a node.
 % NodeId is the node to which the request is sent.
-send_request(NodePid, Request) when is_list(NodePid) ->
-    ?MODULE:send_request(list_to_pid(NodePid), Request);
 send_request(NodePid, Request) when is_pid(NodePid) ->
     try
         gen_server:call(NodePid, {Request, ?MODULE:my_address()})
@@ -34,12 +32,9 @@ send_request(NodePid, Request) when is_pid(NodePid) ->
 
 % This function is used to send asynchronous requests to a node.
 % NodeId is the node to which the request is sent.
-send_async_request(NodePid, Request) when is_list(NodePid) ->
-    ?MODULE:send_async_request(list_to_pid(NodePid), Request);
 send_async_request(NodePid, Request) when is_pid(NodePid) ->
     gen_server:cast(NodePid, {Request, ?MODULE:my_address()}).
 
 % This function is used to get the hash id of the node starting from his pid.
 my_hash_id(K) ->
-    PidString = pid_to_list(?MODULE:my_address()),
-    utils:k_hash(PidString, K).
+    utils:k_hash(?MODULE:my_address(), K).

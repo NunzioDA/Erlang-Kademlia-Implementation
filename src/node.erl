@@ -10,7 +10,7 @@
 -export([init/1, handle_call/3, handle_cast/2, terminate/2, kill/1]).
 -export([start/3, start/4, ping_node/1, store_value/5, save_node/1, send_request/2]).
 -export([store/3, find_value/2, get_routing_table/1, talk/1, shut/1, start_link/4, enroll_as_bootstrap/0]).
--export([save_node/4, branch_lookup/2, find_node/7, find_node/4, get_value/3, request_handler/3, delete_node/3]).
+-export([save_node_request_handler/4, branch_lookup/2, find_node/7, find_node/4, get_value/3, request_handler/3, delete_node/3]).
 -export([async_request_handler/2, find_k_nearest_node/5, find_value_implementation/3,find_k_nearest_node/4, join/3]).
 
 % Starts a new node in the Kademlia network.
@@ -147,12 +147,13 @@ save_node(NodePid) ->
         end;
     true -> {ignored_node, "Can't save my pid"}
     end.
+
 % NodePid: The process identifier of the node to be saved. It is used to contact the node.
 % RoutingTable: the table where store the information.
 % K: The number of bits used for the node's hash_id representation.
-save_node(NodePid, RoutingTable, K, K_Bucket_Size) when is_pid(NodePid) ->
-    ?MODULE:save_node(pid_to_list(NodePid), RoutingTable, K, K_Bucket_Size);
-save_node(NodePid, RoutingTable, K, K_Bucket_Size) when is_list(NodePid) ->
+save_node_request_handler(NodePid, RoutingTable, K, K_Bucket_Size) when is_pid(NodePid) ->
+    ?MODULE:save_node_request_handler(pid_to_list(NodePid), RoutingTable, K, K_Bucket_Size);
+save_node_request_handler(NodePid, RoutingTable, K, K_Bucket_Size) when is_list(NodePid) ->
     NodeHashId = utils:k_hash(NodePid, K),
     % Determine the branch ID in the routing table corresponding to the hash ID.
     BranchID = utils:get_subtree_index(NodeHashId, com:my_hash_id(K)),
@@ -425,7 +426,7 @@ request_handler(_, _, State) ->
 % When a save_node request is received save_node is called
 handle_cast({save_node, NodePid}, State) ->
     {RoutingTable, _, K, _, Bucket_Size} = State,
-    ?MODULE:save_node(NodePid, RoutingTable, K, Bucket_Size),
+    ?MODULE:save_node_request_handler(NodePid, RoutingTable, K, Bucket_Size),
     {noreply, State};
 handle_cast({{delete_node,NodePid}, SenderPid}, State) ->
     {RoutingTable, _, K, _, _} = State,

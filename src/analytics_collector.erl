@@ -11,6 +11,7 @@
 
 -export([init/1, handle_call/3, handle_cast/2, terminate/2, code_change/3]).
 -export([start/0, enroll_bootstrap/1, get_bootstrap_list/0, started_join_procedure/1, finished_join_procedure/1, join_procedure_mean_time/0, get_unfinished_processes/0]).
+-export([start_link/0, add/3, get_events/1, make_request/2, calculate_mean_time/2, register_new_event/3]).
 
 % --------------------------------
 % Starting methods
@@ -23,7 +24,7 @@ start() ->
 	Pid = whereis(analytics_collector),
 
 	if Pid == undefined ->
-    	start_link();
+    	?MODULE:start_link();
 	true ->
 		{warning, "An instance of analytics_collector is already running."}
 	end.
@@ -45,15 +46,15 @@ start_link() ->
 % the join_procedure
 started_join_procedure(Pid) ->
 	StartMillis = erlang:monotonic_time(millisecond),
-	add(Pid, started_join_procedure, StartMillis).
+	?MODULE:add(Pid, started_join_procedure, StartMillis).
 % This function is used to signal that a process finished
 % the join_procedure
 finished_join_procedure(Pid) ->
 	EndMillis = erlang:monotonic_time(millisecond),
-	add(Pid, finished_join_procedure, EndMillis).
+	?MODULE:add(Pid, finished_join_procedure, EndMillis).
 
 enroll_bootstrap(Pid) ->
-	add(Pid, bootstrap, 1).
+	?MODULE:add(Pid, bootstrap, 1).
 %
 %------------------------------------
 % Results management
@@ -62,15 +63,15 @@ enroll_bootstrap(Pid) ->
 % This function is used to compute the join_procedure
 % mean time based on the signaled events
 join_procedure_mean_time() ->
-	StartedTimes = get_events(started_join_procedure),
-	FinishedTimes = get_events(finished_join_procedure),
+	StartedTimes = ?MODULE:get_events(started_join_procedure),
+	FinishedTimes = ?MODULE:get_events(finished_join_procedure),
 
-	MeanTime = calculate_mean_time(StartedTimes, FinishedTimes),
+	MeanTime = ?MODULE:calculate_mean_time(StartedTimes, FinishedTimes),
 	MeanTime.
 
 get_unfinished_processes()->
-	StartedTimes = get_events(started_join_procedure),
-	FinishedTimes = get_events(finished_join_procedure),
+	StartedTimes = ?MODULE:get_events(started_join_procedure),
+	FinishedTimes = ?MODULE:get_events(finished_join_procedure),
 
 	FilteredStartedTimes = [Pid || {Pid, _} <- StartedTimes, not lists:keymember(Pid, 1, FinishedTimes)],
 	utils:print("~p", [length(FilteredStartedTimes)]),
@@ -82,7 +83,7 @@ get_bootstrap_list() ->
 			[Pid|Acc]
 		end,
 		[],
-		get_events(bootstrap)
+		?MODULE:get_events(bootstrap)
 	).
 
 % This function is used to compute the mean time based on two
@@ -123,7 +124,7 @@ calculate_mean_time(StartedTimes, FinishedTimes) ->
 %-------------------------------------------
 % This function is the generic function used to add new events.
 add(ClientPid, EventType, Event) ->
-	make_request(cast, {new_event, ClientPid, EventType, Event})
+	?MODULE:make_request(cast, {new_event, ClientPid, EventType, Event})
 .
 
 % This function is used to get the events list of a given type.
@@ -159,7 +160,7 @@ handle_call(_Request, _From, State) ->
 
 % This clause handle the registration of a generic event
 handle_cast({new_event, Pid, EventType, Event}, State) ->
-	register_new_event(Pid, EventType, Event),
+	?MODULE:register_new_event(Pid, EventType, Event),
 	{noreply, State}.
 % This function saves the event to the ets table
 % named analytics.

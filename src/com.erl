@@ -13,35 +13,33 @@
 % use the same address
 save_address(Address) ->
     put(my_address, Address).
+
 % This function gets the process address
 my_address() ->
     case get(my_address) of
         undefined -> self();
-        Address->Address
+        Address -> Address
     end.
 
 % This function is used to send synchronous requests to a node.
 % NodeId is the node to which the request is sent.
 send_request(NodePid, Request) when is_list(NodePid) ->
-    send_request(list_to_pid(NodePid), Request);
+    ?MODULE:send_request(list_to_pid(NodePid), Request);
 send_request(NodePid, Request) when is_pid(NodePid) ->
-    
     try
-        gen_server:call(NodePid, {Request, my_address()})
+        gen_server:call(NodePid, {Request, ?MODULE:my_address()})
     catch _:Reason ->
-        {error,Reason}
-    end
-.
+        {error, Reason}
+    end.
 
 % This function is used to send asynchronous requests to a node.
 % NodeId is the node to which the request is sent.
 send_async_request(NodePid, Request) when is_list(NodePid) ->
-    send_async_request(list_to_pid(NodePid), Request);
-send_async_request(NodePid, Request) when is_pid(NodePid)->
-    gen_server:cast(NodePid, {Request, my_address()}).
+    ?MODULE:send_async_request(list_to_pid(NodePid), Request);
+send_async_request(NodePid, Request) when is_pid(NodePid) ->
+    gen_server:cast(NodePid, {Request, ?MODULE:my_address()}).
 
 % This function is used to get the hash id of the node starting from his pid.
 my_hash_id(K) ->
-    PidString = pid_to_list(com:my_address()),
-    utils:k_hash(PidString, K)
-.
+    PidString = pid_to_list(?MODULE:my_address()),
+    utils:k_hash(PidString, K).

@@ -8,7 +8,7 @@
 %
 %
 -module(join_thread).
--export([start/3]).
+-export([start/3, join_procedure_starter/3, join_procedure/5, pick_bootstrap/0]).
 
 % This function starts the thread signaling the
 % start and the end of the join procedure to the
@@ -39,17 +39,17 @@ pick_bootstrap() ->
 % branches the procedure is restarted after 2000 millis.
 join_procedure_starter(RoutingTable, K, K_Bucket_Size)->
     thread:check_verbose(),
-    utils:debugPrint("Starting join procedure to fill missing branches ~p~n", [com:my_address()]),
+    utils:debug_print("Starting join procedure to fill missing branches ~p~n", [com:my_address()]),
     
-    BootstrapPid = pick_bootstrap(),
+    BootstrapPid = ?MODULE:pick_bootstrap(),
     BootstrapHash = utils:k_hash(pid_to_list(BootstrapPid), K),
-    join_procedure([{BootstrapHash, BootstrapPid}], RoutingTable, K, K_Bucket_Size, []),
+    ?MODULE:join_procedure([{BootstrapHash, BootstrapPid}], RoutingTable, K, K_Bucket_Size, []),
 
     EmptyBranches = utils:empty_branches(RoutingTable, K),
     if EmptyBranches ->
         receive
         after 2000 ->
-            join_procedure_starter(RoutingTable, K, K_Bucket_Size)
+            ?MODULE:join_procedure_starter(RoutingTable, K, K_Bucket_Size)
         end;
     true -> ok
     end
@@ -87,10 +87,10 @@ join_procedure([{_,NodePid} | T], RoutingTable, K, K_Bucket_Size, ContactedNodes
             % the branches with the sender.
             % The variable FilledBranches contains the branches that are already filled, 
             % allowing the receiver to ignore them and return only what's needed.
-            utils:debugPrint("Contacting node ~p~n", [NodePid]),
+            utils:debug_print("Contacting node ~p~n", [NodePid]),
             case com:send_request(NodePid, {fill_my_routing_table, FilledBranches}) of
                 {ok, {Branches}} -> 
-                    utils:debugPrint("Done node ~p~n", [NodePid]),
+                    utils:debug_print("Done node ~p~n", [NodePid]),
                     % saving all the new nodes
                     lists:foreach(
                         fun({_, NewNode}) ->
@@ -98,7 +98,7 @@ join_procedure([{_,NodePid} | T], RoutingTable, K, K_Bucket_Size, ContactedNodes
                         end,
                         Branches
                     ),
-                    utils:debugPrint("Nearest List ~p to ~p~n", [Branches, com:my_address()]),
+                    utils:debug_print("Nearest List ~p to ~p~n", [Branches, com:my_address()]),
                     NewContactedNodesList =  [NodePid|ContactedNodes],
 
                     RemovedContacted = utils:remove_contacted_nodes(T ++ Branches, NewContactedNodesList),
@@ -106,10 +106,10 @@ join_procedure([{_,NodePid} | T], RoutingTable, K, K_Bucket_Size, ContactedNodes
                     SortedNewContactList = utils:sort_node_list(FilteredNewContactList, com:my_hash_id(K)),
                 
 
-                    join_procedure(SortedNewContactList, RoutingTable, K, K_Bucket_Size, NewContactedNodesList);
+                    ?MODULE:join_procedure(SortedNewContactList, RoutingTable, K, K_Bucket_Size, NewContactedNodesList);
                 Error -> 
-                    utils:debugPrint("Error occurred ~p~n", [Error]),
-                    join_procedure(T, RoutingTable, K, K_Bucket_Size, [NodePid|ContactedNodes])
+                    utils:debug_print("Error occurred ~p~n", [Error]),
+                    ?MODULE:join_procedure(T, RoutingTable, K, K_Bucket_Size, [NodePid|ContactedNodes])
             end;
         true -> ok
         end;

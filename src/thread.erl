@@ -11,7 +11,7 @@
 
 -module(thread).
 
--export([start/1, check_verbose/0, set_verbose/1, kill_all/0]).
+-export([start/1, check_verbose/0, set_verbose/1, kill_all/0, save_thread/1, get_threads/0, send_message_to_my_threads/1]).
 
 start(Function) ->
     ParentAddress = com:my_address(),
@@ -25,11 +25,11 @@ start(Function) ->
             Function()
         end
     ),
-    save_thread(Pid)
+    ?MODULE:save_thread(Pid)
 .
 
 kill_all()->
-    Threads = get_threads(),
+    Threads = ?MODULE:get_threads(),
     lists:foreach(
         fun(Thread) ->
             exit(Thread, kill)
@@ -52,7 +52,7 @@ check_verbose() ->
 % This method is used to save the thread Pid in the 
 % Parent process dictionary.
 save_thread(Pid)->
-    Threads = get_threads(),
+    Threads = ?MODULE:get_threads(),
     put(my_threads, [Pid | Threads])
 .
 
@@ -68,14 +68,14 @@ get_threads() ->
 % This method is called from the parent process to
 % automatically set the verbosity of all its threads 
 set_verbose(Verbose) ->
-    send_message_to_my_threads({verbose, Verbose})
+    ?MODULE:send_message_to_my_threads({verbose, Verbose})
 .
 % This is a generic function that sends messages to
 % the threads a process started.
 % It also checks if threads are still alive, removing those
 % who are not alive anymore.
 send_message_to_my_threads(Message) -> 
-    Threads = get_threads(),
+    Threads = ?MODULE:get_threads(),
     NewThreads = lists:foldl(
         fun(Pid, Acc) ->
             IsAlive = erlang:is_process_alive(Pid),

@@ -1,10 +1,10 @@
 -module(republisher).
--export([start/5, terminate/1]).
+-export([start/5, terminate/1, republish_behaviour/5]).
 
 start(ValuesTable, RoutingTable, K, T, BucketSize) ->
     thread:start(
         fun()->
-            republish_behaviour(ValuesTable, RoutingTable, K, T, BucketSize)
+            ?MODULE:republish_behaviour(ValuesTable, RoutingTable, K, T, BucketSize)
         end
     )
 .
@@ -29,6 +29,6 @@ republish_behaviour(ValuesTable, RoutingTable, K, T, BucketSize) ->
             end,
             ValuesMapList
         ),
-        republish_behaviour(ValuesTable, RoutingTable, K, T, BucketSize)
+        ?MODULE:republish_behaviour(ValuesTable, RoutingTable, K, T, BucketSize)
     end
 .

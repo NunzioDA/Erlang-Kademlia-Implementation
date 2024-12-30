@@ -45,14 +45,12 @@ start_link() ->
 %
 % This function is used to signal that a process started
 % the join_procedure
-started_join_procedure(Pid) ->
-	StartMillis = erlang:monotonic_time(millisecond),
-	?MODULE:add(Pid, started_join_procedure, StartMillis).
+started_join_procedure(Pid) ->	
+	?MODULE:add(Pid, started_join_procedure, 0).
 % This function is used to signal that a process finished
 % the join_procedure
 finished_join_procedure(Pid) ->
-	EndMillis = erlang:monotonic_time(millisecond),
-	?MODULE:add(Pid, finished_join_procedure, EndMillis).
+	?MODULE:add(Pid, finished_join_procedure, 0).
 
 enroll_bootstrap(Pid) ->
 	?MODULE:add(Pid, bootstrap, 1).
@@ -67,8 +65,10 @@ enroll_process(Pid)->
 % This function is used to compute the join_procedure
 % mean time based on the signaled events
 join_procedure_mean_time() ->
-	StartedTimes = ?MODULE:get_events(started_join_procedure),
-	FinishedTimes = ?MODULE:get_events(finished_join_procedure),
+	StartedTimes = ?MODULE:get_started_join_processes(),
+	FinishedTimes = ?MODULE:get_finished_join_processes(),
+
+
 
 	MeanTime = ?MODULE:calculate_mean_time(StartedTimes, FinishedTimes),
 	MeanTime.
@@ -78,7 +78,7 @@ get_unfinished_processes()->
 	StartedTimes = ?MODULE:get_events(started_join_procedure),
 	FinishedTimes = ?MODULE:get_events(finished_join_procedure),
 
-	FilteredStartedTimes = [Pid || {Pid, _} <- StartedTimes, not lists:keymember(Pid, 1, FinishedTimes)],
+	FilteredStartedTimes = [Pid || {Pid, _, _} <- StartedTimes, not lists:keymember(Pid, 1, FinishedTimes)],
 	FilteredStartedTimes.
 
 % This function flushes the join procedure results
@@ -94,7 +94,7 @@ get_finished_join_processes() ->
 
 get_bootstrap_list() ->
 	lists:foldl(
-		fun({Pid,_}, Acc) ->
+		fun({Pid,_,_}, Acc) ->
 			[Pid|Acc]
 		end,
 		[],
@@ -103,7 +103,7 @@ get_bootstrap_list() ->
 
 get_processes_list() ->
 		lists:foldl(
-		fun({Pid,_}, Acc) ->
+		fun({Pid,_,_}, Acc) ->
 			[Pid|Acc]
 		end,
 		[],
@@ -114,17 +114,16 @@ get_processes_list() ->
 % lists, the start time and the end time.
 % Each list is a list of tuples {Pid, time}
 calculate_mean_time(StartedTimes, FinishedTimes) ->
-	FilteredStartedTimes = [{Pid, Time} || {Pid, Time} <- StartedTimes, lists:keymember(Pid, 1, FinishedTimes)],
-
+	FilteredStartedTimes = [{Pid, Value, Time} || {Pid, Value, Time} <- StartedTimes, lists:keymember(Pid, 1, FinishedTimes)],
 	SortedStart = lists:sort(
-		fun({_, Pid1}, {_, Pid2}) ->
+		fun({Pid1, _,_}, {Pid2, _, _}) ->
 			Pid1 > Pid2
 		end,
 		FilteredStartedTimes
 	),
 
 	SortedFinish = lists:sort(
-		fun({_, Pid1}, {_, Pid2}) ->
+		fun({Pid1, _, _}, {Pid2, _, _}) ->
 			Pid1 > Pid2
 		end,
 		FinishedTimes
@@ -133,7 +132,7 @@ calculate_mean_time(StartedTimes, FinishedTimes) ->
 	Times = lists:zip(SortedStart, SortedFinish),
 
 	TotalTime = lists:foldl(
-		fun({{_, Start}, {_,End}}, Acc) -> Acc + (End - Start) end, 
+		fun({{_, _, Start}, {_,_,End}}, Acc) -> Acc + (End - Start) end, 
 		0, 
 		Times
 	),
@@ -235,15 +234,17 @@ empty_event_list(EventType) ->
 % This function saves the event to the ets table
 % named analytics.
 register_new_event(Pid, EventType, Event) ->
+	Millis = erlang:monotonic_time(millisecond),
+	NewRecord = {Pid, Event, Millis},
 	case ets:lookup(analytics, EventType) of
 		[{_,EventList}] ->
 			ets:lookup(analytics, EventType),
-			NewEventList = EventList ++ [{Pid, Event}],
+			NewEventList = EventList ++ [NewRecord],
 			ets:insert(analytics, {EventType, NewEventList});
 		[] ->
-			ets:insert(analytics, {EventType, [{Pid, Event}]})
+			ets:insert(analytics, {EventType, [NewRecord]})
 	end,
-	?MODULE:notify_listeners(EventType, {Pid, Event})
+	?MODULE:notify_listeners(EventType, NewRecord)
 .
 
 

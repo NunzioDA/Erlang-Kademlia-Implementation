@@ -8,10 +8,10 @@
 -module(node).
 -behaviour(gen_server).
 -export([init/1, handle_call/3, handle_cast/2, terminate/2, kill/1]).
--export([start/3, start/4, ping_node/1, store_value/5, save_node/1, send_request/2]).
+-export([start/3, start/4, ping_node/1, store_value/5, send_request/2]).
 -export([store/3, find_value/2, get_routing_table/1, talk/1, shut/1, start_link/4, enroll_as_bootstrap/0]).
--export([save_node_request_handler/4, branch_lookup/2, find_node/7, find_node/4, get_value/3, request_handler/3, delete_node/3]).
--export([async_request_handler/2, find_k_nearest_node/5, find_value_implementation/3,find_k_nearest_node/4, join/3]).
+-export([save_node/4, branch_lookup/2, find_node/7, find_node/4, get_value/3, request_handler/3, delete_node/3]).
+-export([async_request_handler/2, find_k_nearest_node/5, find_value_implementation/3,find_k_nearest_node/4, join/4]).
 
 % Starts a new node in the Kademlia network.
 % K -> Number of bits to represent a node ID.
@@ -51,15 +51,15 @@ init([K, T, InitAsBootstrap, Verbose]) ->
     % Define the bucket size for routing table entries.
     Bucket_Size = 20,
 
+    Pid = spare_node_manager:start(RoutingTable, K),
+    republisher:start(ValuesTable, RoutingTable, K, T, Bucket_Size),
+
     if not InitAsBootstrap ->
         analytics_collector:enroll_process(com:my_address()),
-        ?MODULE:join(RoutingTable, K, Bucket_Size);
+        ?MODULE:join(RoutingTable, K, Bucket_Size, Pid);
     true ->
         ?MODULE:enroll_as_bootstrap()
     end,
-
-    RepublisherPid = republisher:start(ValuesTable, RoutingTable, K, T, Bucket_Size),
-    put(republisher, RepublisherPid),
 
     % Return the initialized state, containing ETS tables and configuration parameters.
     {ok, {RoutingTable, ValuesTable, K, T, Bucket_Size}}.
@@ -117,29 +117,11 @@ enroll_as_bootstrap() ->
 % ----------------------------------------------------------------------------
 %   ROUTING TABLE MANAGEMENT 
 % ----------------------------------------------------------------------------
-%
-% Saves the information about a node into the routing table.
-% Save node is managed with a cast request so that it is not blocking
-% for the call handling functions or else it would cause a timeout.
-save_node(NodePid) -> 
-    MyPid = com:my_address(),
-
-    % Save node avoids saving its own pid or the shell pid 
-    if NodePid /= MyPid ->
-        ShellPid = whereis(shellPid),
-        if NodePid /= ShellPid, NodePid /= undefined ->
-            % gen_server:cast is used so save_node is not blocking
-            % com:send_async_request is not used because save_node is handled separately
-            gen_server:cast(com:my_address(), {save_node, NodePid});
-        true -> {ignored_node, "Shell pid passed"}
-        end;
-    true -> {ignored_node, "Can't save my pid"}
-    end.
 
 % NodePid: The process identifier of the node to be saved. It is used to contact the node.
 % RoutingTable: the table where store the information.
 % K: The number of bits used for the node's hash_id representation.
-save_node_request_handler(NodePid, RoutingTable, K, K_Bucket_Size) when is_pid(NodePid) ->
+save_node(NodePid, RoutingTable, K, K_Bucket_Size) when is_pid(NodePid) ->
     NodeHashId = utils:k_hash(NodePid, K),
     % Determine the branch ID in the routing table corresponding to the hash ID.
     BranchID = utils:get_subtree_index(NodeHashId, com:my_hash_id(K)),
@@ -176,19 +158,7 @@ save_node_request_handler(NodePid, RoutingTable, K, K_Bucket_Size) when is_pid(N
                             ets:insert(RoutingTable, {BranchID, NewNodeList});
                         % If the list is full, check the last node in the list.
                         false -> 
-                            % Extract the last node in the list.
-                            [{LastSeenNodeHashId, LastSeenNodePid} | Tail] = NodeList,
-                            % Check if the last node is still responsive.
-                            case ?MODULE:ping_node(LastSeenNodePid) of 
-                                % If the last node is responsive, discard the new node.
-                                {pong, ok} -> 
-                                    UpdatedNodeList = Tail ++ [{LastSeenNodeHashId, LastSeenNodePid}], 
-                                    ets:insert(RoutingTable, {BranchID, UpdatedNodeList});
-                                % If the last node is not responsive, discard it and add the new node.
-                                {pang, _} -> 
-                                    UpdatedNodeList = Tail ++ [{NodeHashId, NodePid}],
-                                    ets:insert(RoutingTable, {BranchID, UpdatedNodeList})
-                            end
+                           spare_node_manager:check_node(NodePid)
                     end
             end
     end.
@@ -307,8 +277,9 @@ handle_call({routing_table}, _From, State) ->
 % The sending node of the request is stored in the recipient's routing table.
 handle_call({Request, SenderPid}, _, State) ->  
     % Save the sender node in the routing table.
-    utils:debug_print("Handling ~p", [Request]),
-    ?MODULE:save_node(SenderPid),
+    utils:debug_print("Handling ~p ~p~n", [Request, SenderPid]),
+    {RoutingTable, _, K, _, BucketSize} = State,
+    ?MODULE:save_node(SenderPid,RoutingTable,K,BucketSize),
     ?MODULE:request_handler(Request, SenderPid, State).
 
 % Handles a request to find the closest nodes to a given HashID.
@@ -418,7 +389,7 @@ request_handler(_, _, State) ->
 handle_cast({save_node, NodePid}, State) ->
     {RoutingTable, _, K, _, Bucket_Size} = State,
     utils:debug_print("Handling ~p", [{save_node}]),
-    ?MODULE:save_node_request_handler(NodePid, RoutingTable, K, Bucket_Size),
+    ?MODULE:save_node(NodePid, RoutingTable, K, Bucket_Size),
     {noreply, State};
 handle_cast({{delete_node,NodePid}, SenderPid}, State) ->
     {RoutingTable, _, K, _, _} = State,
@@ -432,7 +403,8 @@ handle_cast({{delete_node,NodePid}, SenderPid}, State) ->
 
 handle_cast({Request, SenderPid}, State) when is_tuple(Request) ->
     utils:debug_print("Handling ~p", [Request]),
-    ?MODULE:save_node(SenderPid),
+    {RoutingTable, _, K, _, BucketSize} = State,
+    ?MODULE:save_node(SenderPid,RoutingTable,K,BucketSize),
     ?MODULE:async_request_handler(Request, State).
 
 % A node store a key/value pair in its own values table.
@@ -575,8 +547,8 @@ ping_node(NodePid) when is_pid(NodePid) ->
 
 % Function to join the network. If no nodes exist, the actor becomes the bootstrap node.
 % Otherwise, it contacts the existing bootstrap node.
-join(RoutingTable, K, BucketSize) ->
-    join_thread:start(K,RoutingTable,BucketSize).
+join(RoutingTable, K, BucketSize, SpareNodeManager) ->
+    join_thread:start(K,RoutingTable,BucketSize,SpareNodeManager).
 
 
 

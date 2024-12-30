@@ -38,7 +38,13 @@ k_hash(Data, K) when is_integer(K), K > 0 ->
 % This function is used to get the index of the subtree that contains the target id.
 get_subtree_index(Binary1, Binary2) ->
     Xor = ?MODULE:xor_distance(Binary1, Binary2),
-    ?MODULE:most_significant_bit_index(Xor).
+    MostSignificant = ?MODULE:most_significant_bit_index(Xor),
+    BitSize = bit_size(Binary1),
+    if MostSignificant > BitSize ->
+        BitSize;
+    true ->
+        MostSignificant
+    end.
 
 % This function is used to get the index of the most significant bit in a binary.
 most_significant_bit_index(Binary) ->
@@ -94,8 +100,18 @@ remove_contacted_nodes(NodesList, ContactedNodes) ->
 
 % 
 empty_branches(RoutingTable, K) ->
-    Tab2List = ets:tab2list(RoutingTable),
-    length(Tab2List) =< K.
+
+    AnyEmpty = lists:any(
+        fun(Element) ->
+            case ets:lookup(RoutingTable,Element) of
+                [] -> true;
+                _ -> false
+            end
+        end,
+        lists:seq(1,K)    
+    ),
+
+    AnyEmpty.
 
 branches_with_less_then(RoutingTable, MinElems, K) ->
     Tab2List = ets:tab2list(RoutingTable),
@@ -147,9 +163,9 @@ verbose() ->
 % Used to print debugging messages
 % It only pints when verbosity is set to true
 debug_print(Format)->
-    ?MODULE:do_it_if_verbose(fun() -> io:format(Format) end).
+    ?MODULE:do_it_if_verbose(fun() -> utils:print("[~p]",[com:my_address()]),io:format(Format) end).
 debug_print(Format, Data)->
-    ?MODULE:do_it_if_verbose(fun() -> io:format(Format, Data) end).
+    ?MODULE:do_it_if_verbose(fun() -> utils:print("[~p]",[com:my_address()]),io:format(Format, Data) end).
 % This function implements the verbosity check
 do_it_if_verbose(Fun) ->
     Verbose = ?MODULE:verbose(),

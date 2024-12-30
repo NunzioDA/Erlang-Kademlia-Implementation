@@ -8,7 +8,7 @@
 - module(starter).
 
 - export([start/0, registerShell/0, start_kademlia_network/4, test_dying_process/0, pick_random_pid/1,test_join_mean_time/0]).
-- export([wait_for_network_to_converge/0, wait_for_progress/1, destroy/0, flush_finished/0]).
+- export([wait_for_network_to_converge/0, wait_for_progress/1, destroy/0]).
 % This function is used to start the simulation
 % It starts the analytics_collector and calls
 % the test function to start Bootstraps
@@ -96,23 +96,19 @@ test_join_mean_time() ->
     utils:print("Mean time for processes to join the network: ~pms~n",[JoinMeanTime]),
 
     analytics_collector:flush_join_events(),
-    utils:print("~nStarting a new node to measure join time~n"),
-    StartPMillis = erlang:monotonic_time(millisecond),
-    Pid = node:start(K,T,false),
-    receive
-        {event_notification, _, _} ->
-            EndPMillis = erlang:monotonic_time(millisecond),
-            ElapsedP = EndPMillis - StartPMillis,
-            utils:print("Time for new process to join the network: ~pms~n",[ElapsedP]),
-            timer:sleep(2000),
-            {ok, RoutingTable} = node:get_routing_table(Pid),
-            utils:print("Current routing table of the new node [~p] : ~n~p~n",[Pid,RoutingTable])
+    utils:print("~nStarting 5 new nodes to measure join time~n"),
 
+    lists:foreach(
+        fun(_)->
+            node:start(K,T,false)
+        end,
+        lists:seq(1,5)
+    ),
 
-    after 50000 ->
-        utils:print("Waiting too long for process to join the network. Join process failed.~n")
-    end
-
+    utils:print("Waiting for new nodes to converge~n"),
+    wait_for_network_to_converge(),
+    JoinMeanTimeNewP = analytics_collector:join_procedure_mean_time(),
+    utils:print("Mean time for new processes to join the network: ~pms~n",[JoinMeanTimeNewP])
 .
 
 % This function selects a random pid from the routing table.
@@ -125,13 +121,12 @@ pick_random_pid(RoutingTable) ->
             RandomPid
     end.
 
-flush_finished()->
-    receive
-        {event_notification, _, Event} ->
-            utils:print("~p~n", [Event])
-    after 5000 ->
-        1
-    end.
+% This function waits for the network to converge
+% based on the event system of the analytics_collector
+% waiting for finished_join_procedure event
+%
+% call analytics_collector:listen_for(finished_join_procedure)
+% before calling wait_for_network_to_converge
 wait_for_network_to_converge() ->    
     wait_for_progress(
         fun() ->
@@ -166,14 +161,11 @@ wait_for_progress(Progress) ->
     end.
 
 destroy() ->
-    % AllProcesses = analytics_collector:get_processes_list(),
-    % lists:foreach(
-    %     fun(Pid)->
-    %         exit(Pid, kill)
-    %     end,
-    %     AllProcesses
-    % ),
-    % analytics_collector:kill(),
-    % AllTables = ets:all(),
-    % lists:foreach(fun(Table) -> ets:delete(Table) end, AllTables),
-    exit(self(),kill).
+    AllProcesses = analytics_collector:get_processes_list(),
+    lists:foreach(
+        fun(Pid)->
+            exit(Pid, kill)
+        end,
+        AllProcesses
+    ),
+    analytics_collector:kill().

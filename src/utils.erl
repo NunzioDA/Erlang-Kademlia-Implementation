@@ -95,7 +95,7 @@ remove_contacted_nodes(NodesList, ContactedNodes) ->
 % 
 empty_branches(RoutingTable, K) ->
     Tab2List = ets:tab2list(RoutingTable),
-    length(Tab2List) < K.
+    length(Tab2List) =< K.
 
 branches_with_less_then(RoutingTable, MinElems, K) ->
     Tab2List = ets:tab2list(RoutingTable),
@@ -105,7 +105,7 @@ branches_with_less_then(RoutingTable, MinElems, K) ->
         end,
         Tab2List    
     ),
-    length(ControlList) < K.
+    length(ControlList) =< K.
 
 
 % Debugging function to print the routing table of the node.

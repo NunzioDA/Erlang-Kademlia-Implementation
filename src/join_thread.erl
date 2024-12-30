@@ -8,15 +8,16 @@
 %
 %
 -module(join_thread).
--export([start/3, join_procedure_starter/3, join_procedure/5, pick_bootstrap/0]).
+-export([start/4, join_procedure_starter/3, join_procedure/5, pick_bootstrap/0]).
 
 % This function starts the thread signaling the
 % start and the end of the join procedure to the
 % analytics_collector
-start(K, RoutingTable, BucketSize) ->
+start(K, RoutingTable, BucketSize,SpareNodeManager) ->
     % Starting a new process to join the network.
     thread:start(
         fun() -> 
+            put(spare_node_manager, SpareNodeManager),
             analytics_collector:started_join_procedure(com:my_address()),
             join_procedure_starter(RoutingTable, K, BucketSize),
             analytics_collector:finished_join_procedure(com:my_address())
@@ -48,7 +49,6 @@ join_procedure_starter(RoutingTable, K, K_Bucket_Size)->
     % Restart join procedure if there are empty branches
     EmptyBranches = utils:empty_branches(RoutingTable, K),
     if EmptyBranches ->
-        timer:sleep(2000),
         ?MODULE:join_procedure_starter(RoutingTable, K, K_Bucket_Size);
     true -> ok
     end
@@ -62,7 +62,7 @@ join_procedure([{_,NodePid} | T], RoutingTable, K, K_Bucket_Size, ContactedNodes
     MyPid = com:my_address(),
     if NodePid /= MyPid ->
         % The first node is saved
-        node:save_node(NodePid),
+        node:save_node(NodePid,RoutingTable,K,K_Bucket_Size),
 
         % Saving the branches that already have at least one element
         Tab2List = ets:tab2list(RoutingTable),
@@ -93,7 +93,7 @@ join_procedure([{_,NodePid} | T], RoutingTable, K, K_Bucket_Size, ContactedNodes
                     % saving all the new nodes
                     lists:foreach(
                         fun({_, NewNode}) ->
-                            node:save_node(NewNode)
+                            node:save_node(NewNode,RoutingTable,K,K_Bucket_Size)
                         end,
                         Branches
                     ),
@@ -116,7 +116,12 @@ join_procedure([{_,NodePid} | T], RoutingTable, K, K_Bucket_Size, ContactedNodes
                     end;
                 Error -> 
                     utils:debug_print("Error occurred ~p~n", [Error]),
-                    ?MODULE:join_procedure(T, RoutingTable, K, K_Bucket_Size, [NodePid|ContactedNodes])
+                    EmptyBranches = utils:empty_branches(RoutingTable, K),
+                    if EmptyBranches ->
+                        ?MODULE:join_procedure(T, RoutingTable, K, K_Bucket_Size, [NodePid|ContactedNodes]);
+                    true->
+                        ok
+                    end
             end;
         true -> ok
         end;

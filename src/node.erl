@@ -54,12 +54,13 @@ init([K, T, InitAsBootstrap, Verbose]) ->
     Pid = spare_node_manager:start(RoutingTable, K),
     republisher:start(ValuesTable, RoutingTable, K, T, Bucket_Size),
 
-    if not InitAsBootstrap ->
-        analytics_collector:enroll_process(com:my_address()),
-        ?MODULE:join(RoutingTable, K, Bucket_Size, Pid);
-    true ->
-        ?MODULE:enroll_as_bootstrap()
+    analytics_collector:enroll_process(com:my_address()),
+    if InitAsBootstrap ->
+        ?MODULE:enroll_as_bootstrap();
+    true -> ok
     end,
+    
+    ?MODULE:join(RoutingTable, K, Bucket_Size, Pid),
 
     % Return the initialized state, containing ETS tables and configuration parameters.
     {ok, {RoutingTable, ValuesTable, K, T, Bucket_Size}}.
@@ -311,17 +312,17 @@ request_handler({find_value, Key}, _From, State) ->
     end;
 % This request is used during the join operation to fill the routing table of the new node.
 request_handler({fill_my_routing_table, FilledIndexes}, ClientPid, State) ->
-    {RoutingTable, _, K, _, _} = State,
+    {RoutingTable, _, K, _, Bucket_Size} = State,
     % First the server finds all the branches that it shares with the client
     % making the filling procedue more efficient.
     ClientHash = utils:k_hash(ClientPid, K),
     SubTreeIndex = utils:get_subtree_index(com:my_hash_id(K), ClientHash),
 
-    AllBranches = lists:seq(1, SubTreeIndex),
+    AllBranches = lists:seq(1, SubTreeIndex - 1),
     % The server avoids to lookup for the branches that the client have already filled.
     BranchesToLookup = lists:filter(
         fun(X) -> 
-            not lists:member(X, FilledIndexes)            
+            not lists:member(X, FilledIndexes)        
         end, 
         AllBranches
     ),
@@ -350,13 +351,13 @@ request_handler({fill_my_routing_table, FilledIndexes}, ClientPid, State) ->
     % take 2 nodes from each of the remaining
     % buckets giving the client some node to contact
     if SubTreeIndex =< K ->
-        OtherBranchesToLookUp = lists:seq(SubTreeIndex+1, K + 1),
+        OtherBranchesToLookUp = lists:seq(SubTreeIndex, K),
         OtherBranches = lists:foldl(
             fun(Branch, NodeList) ->
                 BranchContent = ?MODULE:branch_lookup(RoutingTable, Branch),
                 BranchLen = length(BranchContent),
-                if(BranchLen > 2) -> 
-                    HalfBranch = lists:sublist(BranchContent, 1, 2);
+                if(BranchLen > (Bucket_Size div 2)) -> 
+                    HalfBranch = lists:sublist(BranchContent, 1, Bucket_Size div 2);
                 true ->
                     HalfBranch = BranchContent
                 end,
@@ -374,8 +375,7 @@ request_handler({fill_my_routing_table, FilledIndexes}, ClientPid, State) ->
     {reply, Response, State};
 
 % Handles the ping message sent to a node.
-request_handler(ping, From, State) ->
-    utils:debug_print("Ping received ~p~n", [From]),
+request_handler(ping, _, State) ->
     % Reply with pong to indicate that the node is alive and reachable.
     {reply, {pong, ok}, State};
 % This function is used to find a value in the network 

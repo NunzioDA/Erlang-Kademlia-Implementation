@@ -311,13 +311,13 @@ request_handler({find_value, Key}, _From, State) ->
     end;
 % This request is used during the join operation to fill the routing table of the new node.
 request_handler({fill_my_routing_table, FilledIndexes}, ClientPid, State) ->
-    {RoutingTable, _, K, _, Bucket_Size} = State,
+    {RoutingTable, _, K, _, _} = State,
     % First the server finds all the branches that it shares with the client
     % making the filling procedue more efficient.
     ClientHash = utils:k_hash(ClientPid, K),
     SubTreeIndex = utils:get_subtree_index(com:my_hash_id(K), ClientHash),
 
-    AllBranches = lists:seq(1, SubTreeIndex + 1),
+    AllBranches = lists:seq(1, SubTreeIndex-1),
     % The server avoids to lookup for the branches that the client have already filled.
     BranchesToLookup = lists:filter(
         fun(X) -> 
@@ -326,14 +326,37 @@ request_handler({fill_my_routing_table, FilledIndexes}, ClientPid, State) ->
         AllBranches
     ),
 
-    if SubTreeIndex =< K ->
-        OtherBranchesToLookUp = lists:seq(SubTreeIndex + 1, K + 1),
+    % Here the node will get all the nodes
+    % it knows for the buckets that are shared
+    % with the client.
+    % 
+    % If the server has the hash 1001 and the client
+    % has the hash 1010 they share the first two bits.
+    % Their routing table will share the buckets containing
+    % the nodes starting with 0--- and all the nodes starting
+    % with 10--.
+    % So those buckets will be passed entirely making the
+    % join procedure more efficent.
+    Branches = lists:foldl(
+        fun(Branch, NodeList) ->
+            BranchContent = ?MODULE:branch_lookup(RoutingTable, Branch),
+            NodeList ++ BranchContent
+        end,
+        [],
+        BranchesToLookup
+    ),
+
+    % If the nodes dont have the same hash
+    % take 2 nodes from each of the remaining
+    % buckets giving the client some node to contact
+    if SubTreeIndex =< K+1 ->
+        OtherBranchesToLookUp = lists:seq(SubTreeIndex, K + 1),
         OtherBranches = lists:foldl(
             fun(Branch, NodeList) ->
                 BranchContent = ?MODULE:branch_lookup(RoutingTable, Branch),
                 BranchLen = length(BranchContent),
-                if(BranchLen > (Bucket_Size div 2)) -> 
-                    HalfBranch = lists:sublist(BranchContent, 1, Bucket_Size div 2);
+                if(BranchLen > 2) -> 
+                    HalfBranch = lists:sublist(BranchContent, 1, 2);
                 true ->
                     HalfBranch = BranchContent
                 end,
@@ -345,14 +368,6 @@ request_handler({fill_my_routing_table, FilledIndexes}, ClientPid, State) ->
     true -> OtherBranches = []
     end,
 
-    Branches = lists:foldl(
-        fun(Branch, NodeList) ->
-            BranchContent = ?MODULE:branch_lookup(RoutingTable, Branch),
-            NodeList ++ BranchContent
-        end,
-        [],
-        BranchesToLookup
-    ),
     % The server returns the nearest nodes to the client that are next to be requested.
     NearestNodes = ?MODULE:find_node(RoutingTable, 2, K, ClientHash),
     Response = {ok, {Branches ++ OtherBranches ++ NearestNodes}},

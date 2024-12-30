@@ -158,7 +158,8 @@ save_node(NodePid, RoutingTable, K, K_Bucket_Size) when is_pid(NodePid) ->
                             ets:insert(RoutingTable, {BranchID, NewNodeList});
                         % If the list is full, check the last node in the list.
                         false -> 
-                           spare_node_manager:check_node(NodePid)
+                            % Delegating spare node to the spare_node_manager
+                           spare_node_manager:delegate(NodePid)
                     end
             end
     end.

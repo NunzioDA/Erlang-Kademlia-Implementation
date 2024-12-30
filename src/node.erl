@@ -9,7 +9,7 @@
 -behaviour(gen_server).
 -export([init/1, handle_call/3, handle_cast/2, terminate/2, kill/1]).
 -export([start/3, start/4, ping_node/1, store_value/5, send_request/2]).
--export([store/3, find_value/2, get_routing_table/1, talk/1, shut/1, start_link/4, enroll_as_bootstrap/0]).
+-export([store/3, find_value/2, get_routing_table/1, talk/1, shut/1, start_server/4, enroll_as_bootstrap/0]).
 -export([save_node/4, branch_lookup/2, find_node/7, find_node/4, get_value/3, request_handler/3, delete_node/3]).
 -export([async_request_handler/2, find_k_nearest_node/5, find_value_implementation/3,find_k_nearest_node/4, join/4]).
 
@@ -21,12 +21,12 @@ start(K, T, InitAsBootstrap) ->
     ?MODULE:start(K, T, InitAsBootstrap, false).
 
 start(K, T, InitAsBootstrap, Verbose) ->
-    Pid = ?MODULE:start_link(K, T, InitAsBootstrap, Verbose),
+    Pid = ?MODULE:start_server(K, T, InitAsBootstrap, Verbose),
     Pid.
 
 % Starts the node process.
-% gen_server:start_link/3 calls init/1, who takes in input [K, T].
-start_link(K, T, InitAsBootstrap, Verbose) ->
+% gen_server:start/3 calls init/1, who takes in input [K, T].
+start_server(K, T, InitAsBootstrap, Verbose) ->
     {ok, Pid} = gen_server:start(?MODULE, [K, T, InitAsBootstrap, Verbose], []),
     Pid.
 

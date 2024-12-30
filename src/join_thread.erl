@@ -50,7 +50,7 @@ nearest_bootstrap(K) ->
     BootstrapList = analytics_collector:get_bootstrap_list(),
     BootstrapListFiltered =lists:foldl(
         fun(Pid, Acc) ->
-            case Pid == com:my_address() of 
+            case Pid =:= com:my_address() of 
                 true -> Acc;
                 false -> [{utils:k_hash(Pid, K), Pid} | Acc]
             end
@@ -58,8 +58,13 @@ nearest_bootstrap(K) ->
         [],
         BootstrapList
     ),
-    [First|_] = utils:sort_node_list(BootstrapListFiltered, com:my_hash_id(K)),
-    First.
+
+    case length(BootstrapListFiltered) of
+        0 -> -1;
+        _ ->                    
+            [First|_] = utils:sort_node_list(BootstrapListFiltered, com:my_hash_id(K)),
+            First
+    end.
 
 % This function starts the join procedure.
 % If at the end of the procedure there are still empty 
@@ -85,7 +90,7 @@ join_procedure_starter(RoutingTable, K, K_Bucket_Size, LastResult)->
         true -> ok
         end;
     true -> 
-        ?MODULE:join_procedure_starter(RoutingTable, K, K_Bucket_Size)
+        ?MODULE:join_procedure_starter(RoutingTable, K, K_Bucket_Size, {ok, random_bootstrap})
     end
 .
 

@@ -250,5 +250,7 @@ register_new_event(Pid, EventType, Event) ->
 kill() ->
 	case whereis(analytics_collector) of
 		undefined -> utils:print("There is not any instance of Analytic Collector running");
-		Pid -> exit(Pid, kill)
+		Pid -> 
+			exit(Pid, kill),
+			ets:delete(analytics)
 	end.

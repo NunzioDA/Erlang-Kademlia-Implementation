@@ -317,7 +317,7 @@ request_handler({fill_my_routing_table, FilledIndexes}, ClientPid, State) ->
     ClientHash = utils:k_hash(ClientPid, K),
     SubTreeIndex = utils:get_subtree_index(com:my_hash_id(K), ClientHash),
 
-    AllBranches = lists:seq(1, SubTreeIndex-1),
+    AllBranches = lists:seq(1, SubTreeIndex),
     % The server avoids to lookup for the branches that the client have already filled.
     BranchesToLookup = lists:filter(
         fun(X) -> 
@@ -349,8 +349,8 @@ request_handler({fill_my_routing_table, FilledIndexes}, ClientPid, State) ->
     % If the nodes dont have the same hash
     % take 2 nodes from each of the remaining
     % buckets giving the client some node to contact
-    if SubTreeIndex =< K+1 ->
-        OtherBranchesToLookUp = lists:seq(SubTreeIndex, K + 1),
+    if SubTreeIndex =< K ->
+        OtherBranchesToLookUp = lists:seq(SubTreeIndex+1, K + 1),
         OtherBranches = lists:foldl(
             fun(Branch, NodeList) ->
                 BranchContent = ?MODULE:branch_lookup(RoutingTable, Branch),

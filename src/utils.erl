@@ -67,11 +67,26 @@ xor_distance(HashID1, HashID2) ->
     R = N1 bxor N2,
     <<R:K>>.
 
-% This function is used to sort a list of nodes by their xor distance from a target id.
+% This function is used to sort a list of nodes by their XOR distance from a target ID.
+% Using the PID along with the XOR distance to sort the node list makes the network more  
+% reliable, even with a large number of collisions. This is particularly helpful when 
+% the network has a large number of nodes and a small K parameter.
 sort_node_list(NodeList, TargetId) ->
     lists:sort(
-        fun({Key1, _}, {Key2, _}) -> 
-            ?MODULE:xor_distance(TargetId, Key1) < ?MODULE:xor_distance(TargetId, Key2) 
+        fun({Key1, Pid1}, {Key2, Pid2}) -> 
+            Distance1 = ?MODULE:xor_distance(TargetId, Key1),
+            Distance2 = ?MODULE:xor_distance(TargetId, Key2),
+            if Distance1 < Distance2 -> 
+                true;
+            true ->
+                % If the distance is equal sort the 
+                % list based on the Pid
+                if Distance1 == Distance2 ->
+                    Pid1 < Pid2;
+                true ->
+                    false
+                end
+            end
         end, 
         NodeList
     ).

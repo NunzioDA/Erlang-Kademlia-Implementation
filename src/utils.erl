@@ -198,7 +198,6 @@ print_progress(ProgressRatio) ->
     IncompleteLength = MaxLength - CompletedLength,
     Bar = "[" ++ lists:duplicate(CompletedLength, $=) 
               ++ lists:duplicate(IncompleteLength, $\s) 
-              ++ "] " 
-              ++ integer_to_list(Progress) ++ "%",
-    io:format("\r~s  ", [Bar]),
+              ++ "] ",
+    io:format("\r~s ~3B%  ", [Bar, Progress]),
     ok.

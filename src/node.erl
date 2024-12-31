@@ -8,10 +8,10 @@
 -module(node).
 -behaviour(gen_server).
 -export([init/1, handle_call/3, handle_cast/2, terminate/2, kill/1]).
--export([start/3, start/4, ping_node/1, store_value/5, send_request/2]).
--export([store/3, find_value/2, get_routing_table/1, talk/1, shut/1, start_server/4, enroll_as_bootstrap/0]).
+-export([start/3, start/4, ping_node/1, store_value/5, send_request/2, find_value/3, shell_find_nearest_nodes/2]).
+-export([store/3, find_value/2, get_routing_table/1, talk/1, shut/1, start_server/4]).
 -export([save_node/4, branch_lookup/2, find_node/7, find_node/4, get_value/3, request_handler/3, delete_node/3]).
--export([async_request_handler/2, find_k_nearest_node/5, find_value_implementation/3,find_k_nearest_node/4, join/4]).
+-export([async_request_handler/2, find_k_nearest_node/5, find_value_implementation/4, find_k_nearest_node/4, join/4]).
 
 % Starts a new node in the Kademlia network.
 % K -> Number of bits to represent a node ID.
@@ -54,9 +54,10 @@ init([K, T, InitAsBootstrap, Verbose]) ->
     Pid = spare_node_manager:start(RoutingTable, K),
     republisher:start(ValuesTable, RoutingTable, K, T, Bucket_Size),
 
-    analytics_collector:enroll_process(com:my_address()),
+    analytics_collector:enroll_node(),
+
     if InitAsBootstrap ->
-        ?MODULE:enroll_as_bootstrap();
+        analytics_collector:enroll_bootstrap();
     true -> ok
     end,
     
@@ -90,7 +91,9 @@ store(NodePid, Key, Value) when is_pid(NodePid)->
 % This function is used to make the node start the find_value
 % procedure, contacting the nearest node to the value
 find_value(NodePid, Key) when is_pid(NodePid) ->
-    ?MODULE:send_request(NodePid, {find_value_net, Key}).
+    ?MODULE:find_value(NodePid, Key, true).
+find_value(NodePid, Key, Verbose) when is_pid(NodePid) ->
+    com:send_request(NodePid, {shell_find_value, Key, Verbose}).
 
 % This function is used to change the node verbosity to true
 talk(NodePid) when is_pid(NodePid)->
@@ -100,20 +103,14 @@ talk(NodePid) when is_pid(NodePid)->
 shut(NodePid) when is_pid(NodePid) ->
     com:send_async_request(NodePid, {shut}).
 
+shell_find_nearest_nodes(NodePid, HashId) ->
+    com:send_request(NodePid, {shell_find_nearest_nodes, HashId}).
+
 % This command is used to kill a process
 kill(Pid) when is_pid(Pid) ->
     % Unlinking so the parent is not killed
     unlink(Pid),
     exit(Pid, kill).
-
-% -----------------------------------------------------
-% BOOTSTRAP MANAGEMENT
-% -----------------------------------------------------
-%
-%
-% This fuction is used to enroll the current node as bootstrap
-enroll_as_bootstrap() ->
-    analytics_collector:enroll_bootstrap(com:my_address()).
 
 % ----------------------------------------------------------------------------
 %   ROUTING TABLE MANAGEMENT 
@@ -288,14 +285,12 @@ handle_call({Request, SenderPid}, _, State) ->
 % HashID: The identifier of the target node.
 % State: The current state of the node, including the routing table.
 request_handler({find_node, HashID}, _From, State) ->
-    % Extract the routing table and other relevant state variables of the node.
     {RoutingTable, _, K, _, Bucket_Size} = State,
     % Look up the closest K nodes within the routing table.
     NodeList = ?MODULE:find_node(RoutingTable, Bucket_Size, K, HashID),
     % Reply to the caller with the list of closest nodes and the current state.
     {reply, {ok, NodeList}, State};
 request_handler({find_value, Key}, _From, State) ->
-    % Extract the routing table and other relevant state variables of the node.
     {RoutingTable, ValuesTable, K, _, Bucket_Size} = State,
 
     case ?MODULE:get_value(Key, K, ValuesTable) of 
@@ -380,19 +375,31 @@ request_handler(ping, _, State) ->
     {reply, {pong, ok}, State};
 % This function is used to find a value in the network 
 % from the shell
-request_handler({find_value_net, Key}, _, State) ->
+request_handler({shell_find_value, Key, Verbose}, _, State) ->
     {_,_,K,_,_} = State,
     thread:start(
         fun() ->
-            case ?MODULE:find_value_implementation(Key, [{com:my_hash_id(K), com:my_address()}], []) of
+            EventId = analytics_collector:started_lookup(),
+            case ?MODULE:find_value_implementation(Key, K, [{com:my_hash_id(K), com:my_address()}], []) of
                 {value_not_found, empty} ->
-                    utils:print("[~p] Value ~p not found~n", [com:my_address(), Key]);
+                    if(Verbose) ->
+                        utils:print("[~p] Value ~p not found~n", [com:my_address(), Key]);
+                    true-> ok
+                    end;
                 {ok, _, Value} ->
-                    utils:print("[~p] Value found:~n  ~p => ~p~n", [com:my_address(), Key, Value])
-            end
+                    if(Verbose) ->
+                        utils:print("[~p] Value found: ~p => ~p~n", [com:my_address(), Key, Value]);
+                    true-> ok
+                    end
+            end,
+            analytics_collector:finished_lookup(EventId)
         end   
     ),
     {reply, ok, State};
+request_handler({shell_find_nearest_nodes, HashId},_,State) ->
+    {RoutingTable, _, K, _, BucketSize} = State,
+    Result = ?MODULE:find_k_nearest_node(RoutingTable, HashId, BucketSize, K),
+    {reply, Result, State};
 % Handles any unrecognized request by replying with an error.
 request_handler(_, _, State) ->
     {reply, not_handled_request, State}.
@@ -402,11 +409,6 @@ request_handler(_, _, State) ->
 % ---------------------------------------------------------------- 
 %
 % When a save_node request is received save_node is called
-handle_cast({save_node, NodePid}, State) ->
-    {RoutingTable, _, K, _, Bucket_Size} = State,
-    utils:debug_print("Handling ~p", [{save_node}]),
-    ?MODULE:save_node(NodePid, RoutingTable, K, Bucket_Size),
-    {noreply, State};
 handle_cast({{delete_node,NodePid}, SenderPid}, State) ->
     {RoutingTable, _, K, _, _} = State,
     MyAddress = com:my_address(),
@@ -440,6 +442,7 @@ async_request_handler({put_value, Key, Value}, State) ->
                 ok
             end 
     end,
+    analytics_collector:stored_value(Key),
     {noreply, State};
 async_request_handler({store, Key, Value}, State) ->
     {RoutingTable, _,K,_,Bucket_Size} = State,
@@ -512,7 +515,8 @@ find_k_nearest_node(HashID, BucketSize, K, [{NodeHash, NodePid}|T], ContactedNod
             ),
             % Combine the remaining nodes to process with the filtered nodes from the response.
             NewNodeList = lists:append(T, FilteredNodeList),
-            SortedNodeList = utils:sort_node_list(NewNodeList, HashID),
+            NoDuplicate = utils:remove_duplicates(NewNodeList),
+            SortedNodeList = utils:sort_node_list(NoDuplicate, HashID),
             K_NodeList = lists:sublist(SortedNodeList, BucketSize),
             % Add the current node to the list of contacted nodes.
             NewContactedNodes = lists:append(ContactedNodes, [{NodeHash, NodePid}]),
@@ -538,17 +542,21 @@ store_value(Key, Value, RoutingTable, K, Bucket_Size) ->
     ).
 
 % Finds the value associated with a given key in the network.
-find_value_implementation(_, [], _) ->
+find_value_implementation(_, _, [], _) ->
     {value_not_found, empty};
-find_value_implementation(Key, [{_, Pid} | T], ContactedNodes) ->
+find_value_implementation(Key, K, [{_, Pid} | T], ContactedNodes) ->
+    utils:debug_print("Contacting ~p~n",[Pid]),
     case ?MODULE:send_request(Pid, {find_value, Key}) of
         {nodes_list, NodeList} ->
+            NextNodesList = NodeList ++ T, 
             NewContactedNodes = [Pid | ContactedNodes],
-            NewNodeList = utils:remove_contacted_nodes(NodeList, NewContactedNodes),
-            ?MODULE:find_value_implementation(Key, NewNodeList, NewContactedNodes);
+            NewNodeList = utils:remove_contacted_nodes(NextNodesList, NewContactedNodes),
+            SortedNodeList = utils:sort_node_list(NewNodeList, utils:k_hash(Key,K)),
+
+            ?MODULE:find_value_implementation(Key, K, SortedNodeList, NewContactedNodes);
         {ok, ValueKey, Value} ->
             {ok, ValueKey, Value};
-        _ -> ?MODULE:find_value_implementation(Key,T, [Pid | ContactedNodes])
+        _ -> ?MODULE:find_value_implementation(Key,K, T, [Pid | ContactedNodes])
     end.
 
 % Pings a specific node (NodePid) to check its availability.

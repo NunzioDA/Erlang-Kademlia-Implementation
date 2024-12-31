@@ -18,9 +18,9 @@ start(K, RoutingTable, BucketSize,SpareNodeManager) ->
     thread:start(
         fun() -> 
             put(spare_node_manager, SpareNodeManager),
-            analytics_collector:started_join_procedure(com:my_address()),
+            EventId = analytics_collector:started_join_procedure(),
             join_procedure_starter(RoutingTable, K, BucketSize),
-            analytics_collector:finished_join_procedure(com:my_address())
+            analytics_collector:finished_join_procedure(EventId)
         end
     )
 .

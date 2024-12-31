@@ -12,7 +12,7 @@
 -export([init/1, handle_call/3, handle_cast/2, listen_for/1, notify_listeners/2, kill/0, enroll_node/0, stored_value/1, get_nodes_that_stored/1]).
 -export([start/0, enroll_bootstrap/0, get_bootstrap_list/0, get_node_list/0, started_join_procedure/0, get_started_join_nodes/0, flush_join_events/0]).
 -export([finished_join_procedure/1, join_procedure_mean_time/0, get_unfinished_join_nodes/0, get_finished_join_nodes/0, flush_lookups_events/0]).
--export([start_link/0, add/2, get_events/1, make_request/2, calculate_mean_time/2, register_new_event/3, empty_event_list/1]).
+-export([start_link/0, add/2, get_events/1, make_request/2, calculate_mean_time/2, register_new_event/3, empty_event_list/1, flush_nodes_that_stored/0]).
 -export([started_time_based_event/1, started_lookup/0, finished_time_based_event/2, finished_lookup/1, lookup_mean_time/0, get_finished_lookup/0]).
 
 % --------------------------------
@@ -133,6 +133,8 @@ flush_join_events() ->
 	empty_event_list(started_join_procedure),
 	empty_event_list(finished_join_procedure).
 
+
+
 get_finished_lookup() ->
 	?MODULE:get_events(finished_lookup).
 
@@ -161,8 +163,12 @@ get_node_list() ->
 get_nodes_that_stored(Key) ->
 	StoreEvents = ?MODULE:get_events(stored_value),
 	KeyStoreEvents = [Pid || {Pid,{_,SavedKey}, _} <- StoreEvents, SavedKey == Key],
-	KeyStoreEvents
+	NoDuplicate = utils:remove_duplicates(KeyStoreEvents),
+	NoDuplicate
 .
+
+flush_nodes_that_stored() ->
+	empty_event_list(stored_value).
 
 % This function is used to compute the mean time based on two
 % lists, the start times and the end times.

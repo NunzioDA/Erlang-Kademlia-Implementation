@@ -8,10 +8,10 @@
 -module(node).
 -behaviour(gen_server).
 -export([init/1, handle_call/3, handle_cast/2, terminate/2, kill/1]).
--export([start/3, start/4, ping_node/1, store_value/5, send_request/2, find_value/3, shell_find_nearest_nodes/2]).
--export([store/3, find_value/2, get_routing_table/1, talk/1, shut/1, start_server/4]).
+-export([start/3, start/4, ping/1, distribute_value/5, send_request/2, lookup/3, shell_find_nearest_nodes/2]).
+-export([distribute/3, lookup/2, get_routing_table/1, talk/1, shut/1, start_server/4]).
 -export([save_node/4, branch_lookup/2, find_node/7, find_node/4, get_value/3, request_handler/3, delete_node/3]).
--export([async_request_handler/2, find_k_nearest_node/5, find_value_implementation/4, find_k_nearest_node/4, join/4]).
+-export([async_request_handler/2, find_k_nearest_node/5, lookup_for_value/4, find_k_nearest_node/4, join/4]).
 
 % Starts a new node in the Kademlia network.
 % K -> Number of bits to represent a node ID.
@@ -85,15 +85,15 @@ get_routing_table(NodePid) when is_pid(NodePid)->
     end.
 % This function is used to make the node start the store
 % procedure, contacting the nearest node to the value
-store(NodePid, Key, Value) when is_pid(NodePid)->
-    com:send_async_request(NodePid, {store, Key, Value}).
+distribute(NodePid, Key, Value) when is_pid(NodePid)->
+    com:send_async_request(NodePid, {distribute_value, Key, Value}).
 
-% This function is used to make the node start the find_value
+% This function is used to make the node start the lookup
 % procedure, contacting the nearest node to the value
-find_value(NodePid, Key) when is_pid(NodePid) ->
-    ?MODULE:find_value(NodePid, Key, true).
-find_value(NodePid, Key, Verbose) when is_pid(NodePid) ->
-    com:send_request(NodePid, {shell_find_value, Key, Verbose}).
+lookup(NodePid, Key) when is_pid(NodePid) ->
+    ?MODULE:lookup(NodePid, Key, true).
+lookup(NodePid, Key, Verbose) when is_pid(NodePid) ->
+    com:send_request(NodePid, {shell_lookup, Key, Verbose}).
 
 % This function is used to change the node verbosity to true
 talk(NodePid) when is_pid(NodePid)->
@@ -111,6 +111,16 @@ kill(Pid) when is_pid(Pid) ->
     % Unlinking so the parent is not killed
     unlink(Pid),
     exit(Pid, kill).
+
+% Pings a specific node (NodePid) to check its availability.
+ping(NodePid) when is_pid(NodePid) ->
+    case com:send_request(NodePid, ping) of
+        {pong,ok} ->
+            {pong,ok};
+        % If the node is unreachable, the function returns pang.
+        {error, Reason} -> 
+            {pang, Reason}
+    end.
 
 % ----------------------------------------------------------------------------
 %   ROUTING TABLE MANAGEMENT 
@@ -375,12 +385,12 @@ request_handler(ping, _, State) ->
     {reply, {pong, ok}, State};
 % This function is used to find a value in the network 
 % from the shell
-request_handler({shell_find_value, Key, Verbose}, _, State) ->
+request_handler({shell_lookup, Key, Verbose}, _, State) ->
     {_,_,K,_,_} = State,
     thread:start(
         fun() ->
             EventId = analytics_collector:started_lookup(),
-            case ?MODULE:find_value_implementation(Key, K, [{com:my_hash_id(K), com:my_address()}], []) of
+            case ?MODULE:lookup_for_value(Key, K, [{com:my_hash_id(K), com:my_address()}], []) of
                 {value_not_found, empty} ->
                     if(Verbose) ->
                         utils:print("[~p] Value ~p not found~n", [com:my_address(), Key]);
@@ -427,7 +437,7 @@ handle_cast({Request, SenderPid}, State) when is_tuple(Request) ->
 
 % A node store a key/value pair in its own values table.
 % The node also saves the sender node in its routing table.
-async_request_handler({put_value, Key, Value}, State) ->
+async_request_handler({store, Key, Value}, State) ->
     {_, ValuesTable, K, _, _} = State,
     KeyHash = utils:k_hash(Key, K),
     case ets:lookup(ValuesTable, KeyHash) of
@@ -444,9 +454,9 @@ async_request_handler({put_value, Key, Value}, State) ->
     end,
     analytics_collector:stored_value(Key),
     {noreply, State};
-async_request_handler({store, Key, Value}, State) ->
+async_request_handler({distribute_value, Key, Value}, State) ->
     {RoutingTable, _,K,_,Bucket_Size} = State,
-    thread:start(fun() -> ?MODULE:store_value(Key,Value, RoutingTable, K, Bucket_Size) end),
+    thread:start(fun() -> ?MODULE:distribute_value(Key,Value, RoutingTable, K, Bucket_Size) end),
     {noreply, State};
 async_request_handler({talk},State) ->
     utils:set_verbose(true),
@@ -530,22 +540,23 @@ find_k_nearest_node(HashID, BucketSize, K, [{NodeHash, NodePid}|T], ContactedNod
 
 % Client-side function to store a key/value pair in the K nodes closest
 % to the hash_id of the pair.
-store_value(Key, Value, RoutingTable, K, Bucket_Size) ->
+distribute_value(Key, Value, RoutingTable, K, Bucket_Size) ->
     KeyHashId = utils:k_hash(Key, K),
     NodeList = ?MODULE:find_k_nearest_node(RoutingTable, KeyHashId, Bucket_Size, K),
     utils:debug_print("Publishing [~p,~p] to:~n~p~n",[Key, Value, NodeList]),
     lists:foreach(
         fun({_NodeHashId, NodePid}) ->
-            com:send_async_request(NodePid, {put_value, Key, Value})
+            com:send_async_request(NodePid, {store, Key, Value})
         end,
         NodeList
     ).
 
-% Finds the value associated with a given key in the network.
-find_value_implementation(_, _, [], _) ->
+% Finds the value associated with a given key in the network
+% by sending find_value requests to node that are every time closer to
+% the given value
+lookup_for_value(_, _, [], _) ->
     {value_not_found, empty};
-find_value_implementation(Key, K, [{_, Pid} | T], ContactedNodes) ->
-    utils:debug_print("Contacting ~p~n",[Pid]),
+lookup_for_value(Key, K, [{_, Pid} | T], ContactedNodes) ->
     case ?MODULE:send_request(Pid, {find_value, Key}) of
         {nodes_list, NodeList} ->
             NextNodesList = NodeList ++ T, 
@@ -553,20 +564,10 @@ find_value_implementation(Key, K, [{_, Pid} | T], ContactedNodes) ->
             NewNodeList = utils:remove_contacted_nodes(NextNodesList, NewContactedNodes),
             SortedNodeList = utils:sort_node_list(NewNodeList, utils:k_hash(Key,K)),
 
-            ?MODULE:find_value_implementation(Key, K, SortedNodeList, NewContactedNodes);
+            ?MODULE:lookup_for_value(Key, K, SortedNodeList, NewContactedNodes);
         {ok, ValueKey, Value} ->
             {ok, ValueKey, Value};
-        _ -> ?MODULE:find_value_implementation(Key,K, T, [Pid | ContactedNodes])
-    end.
-
-% Pings a specific node (NodePid) to check its availability.
-ping_node(NodePid) when is_pid(NodePid) ->
-    case com:send_request(NodePid, ping) of
-        {pong,ok} ->
-            {pong,ok};
-        % If the node is unreachable, the function returns pang.
-        {error, Reason} -> 
-            {pang, Reason}
+        _ -> ?MODULE:lookup_for_value(Key,K, T, [Pid | ContactedNodes])
     end.
 
 % Function to join the network. If no nodes exist, the actor becomes the bootstrap node.

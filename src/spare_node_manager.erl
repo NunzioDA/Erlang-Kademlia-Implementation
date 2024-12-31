@@ -65,7 +65,7 @@ handle_cast({check, NodePid}, State) ->
         % Extract the last seen node in the list.
         [{LastSeenNodeHashId, LastSeenNodePid} | Tail] = NodeList,
         % Check if the last node is still responsive.
-        case node:ping_node(LastSeenNodePid) of 
+        case node:ping(LastSeenNodePid) of 
             % If the last node is responsive, discard the new node.
             {pong, ok} -> 
                 UpdatedNodeList = Tail ++ [{LastSeenNodeHashId, LastSeenNodePid}], 

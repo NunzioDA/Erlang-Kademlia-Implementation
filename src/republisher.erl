@@ -32,7 +32,7 @@ republish_behaviour(ValuesTable, RoutingTable, K, T, BucketSize) ->
             ValueList = maps:to_list(ValuesMap),
             lists:foreach(
                 fun({Key,Value}) ->
-                    node:store_value(Key, Value, RoutingTable, K, BucketSize)
+                    node:distribute_value(Key, Value, RoutingTable, K, BucketSize)
                 end,
                 ValueList
             )

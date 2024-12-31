@@ -87,7 +87,7 @@ test_dying_process() ->
     node:kill(RandomPid),
 
     utils:print("Asking bootstrap to store value so it tryes to contact [~p]~n",[RandomPid]),
-    node:store(BootstrapNode,"foo", 0),
+    node:distribute(BootstrapNode,"foo", 0),
     timer:sleep(2000),
     {ok, NewRoutingTable} = node:get_routing_table(BootstrapNode),
     utils:print("New routing table of the bootstrap node [~p] : ~n~p~n",[BootstrapNode,NewRoutingTable])
@@ -178,7 +178,7 @@ test_lookup_meantime() ->
 
     utils:print("~nSaving 'foo' => 0 in the network...~n"),
     [BootstrapNode | _] = analytics_collector:get_bootstrap_list(),
-    node:store(BootstrapNode,"foo", 0),
+    node:distribute(BootstrapNode,"foo", 0),
     % Waiting to make sure the value is delivered
     timer:sleep(1000),
 
@@ -203,10 +203,10 @@ test_lookup_meantime() ->
     lists:foreach(
         fun(I)->
             NearNode = lists:nth(I,NearestNodes),
-            % Ping1=node:ping_node(NearNode),
+            % Ping1=node:ping(NearNode),
             % utils:print("~p~n",[Ping1]),
             node:kill(NearNode)
-            % Ping2=node:ping_node(NearNode),
+            % Ping2=node:ping(NearNode),
             % utils:print("~p~n",[Ping2])
         end,  
         lists:seq(1, NodesToKill)
@@ -243,7 +243,7 @@ wait_for_lookups(Lookups)->
             Finished = analytics_collector:get_finished_lookup(),
             LenFinished = length(Finished) + 1,
             % Verbose = LenFinished == Lookups,
-            node:find_value(RandomBootstrap,"foo", true),
+            node:lookup(RandomBootstrap,"foo", true),
             receive
                 {event_notification, finished_lookup, _} ->
                     Progress = LenFinished / Lookups,

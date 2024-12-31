@@ -9,10 +9,11 @@
 -module(analytics_collector).
 -behaviour(gen_server).
 
--export([init/1, handle_call/3, handle_cast/2, listen_for/1, notify_listeners/2, kill/0, enroll_process/1]).
--export([start/0, enroll_bootstrap/1, get_bootstrap_list/0, get_processes_list/0, started_join_procedure/1, get_started_join_processes/0, flush_join_events/0]).
--export([finished_join_procedure/1, join_procedure_mean_time/0, get_unfinished_processes/0, get_finished_join_processes/0]).
+-export([init/1, handle_call/3, handle_cast/2, listen_for/1, notify_listeners/2, kill/0, enroll_node/1]).
+-export([start/0, enroll_bootstrap/1, get_bootstrap_list/0, get_node_list/0, started_join_procedure/0, get_started_join_nodes/0, flush_join_events/0]).
+-export([finished_join_procedure/1, join_procedure_mean_time/0, get_unfinished_join_nodes/0, get_finished_join_nodes/0]).
 -export([start_link/0, add/3, get_events/1, make_request/2, calculate_mean_time/2, register_new_event/3, empty_event_list/1]).
+-export([started_time_based_event/1, started_lookup/0, finished_time_based_event/2, finished_lookup/1, lookup_mean_time/0, get_finished_lookup/0]).
 
 % --------------------------------
 % Starting methods
@@ -43,38 +44,70 @@ start_link() ->
 % Add event methods
 %------------------------------------
 %
-% This function is used to signal that a process started
-% the join_procedure
-started_join_procedure(Pid) ->	
-	?MODULE:add(Pid, started_join_procedure, 0).
-% This function is used to signal that a process finished
-% the join_procedure
-finished_join_procedure(Pid) ->
-	?MODULE:add(Pid, finished_join_procedure, 0).
 
+% This function is used to enroll a process as 
+% a bootstrap node
 enroll_bootstrap(Pid) ->
 	?MODULE:add(Pid, bootstrap, 1).
-enroll_process(Pid)->
-	?MODULE:add(Pid, processes, 1).
+% This functin is used to enrol a process as 
+% a node
+enroll_node(Pid)->
+	?MODULE:add(Pid, node, 1).
 
-%
+
+% This function is used to signal that a process started
+% the join_procedure
+started_join_procedure() ->
+	?MODULE:started_time_based_event(started_join_procedure).
+
+% This function is used to signal that a process finished
+% the join_procedure
+finished_join_procedure(EventId) ->
+	?MODULE:finished_time_based_event(finished_join_procedure, EventId).
+
+started_lookup() ->
+	?MODULE:started_time_based_event(started_lookup).
+
+finished_lookup(EventId) ->
+	?MODULE:finished_time_based_event(finished_lookup, EventId).
+
+
+% This function is used to signal the start of a time based event.
+% It generates a unique integer that will be used to associate 
+% start events with finish events.
+started_time_based_event(Event) ->
+	Pid = com:my_address(),
+	UniqueInteger = integer_to_list(erlang:unique_integer([positive])),
+	?MODULE:add(Pid, Event, UniqueInteger),
+	UniqueInteger.
+% This function is used to signal the end of a time based event.
+% It requires the EventId that is the unique integer generated in
+% started_time_based_event
+finished_time_based_event(Event, EventId) ->
+	Pid = com:my_address(),
+	?MODULE:add(Pid, Event, EventId).	
+
 %------------------------------------
 % Results management
 %------------------------------------
 %
+lookup_mean_time() ->
+	StartedTimes = ?MODULE:get_events(started_lookup),
+	FinishedTimes = ?MODULE:get_events(finished_lookup),
+
+	MeanTime = ?MODULE:calculate_mean_time(StartedTimes, FinishedTimes),
+	MeanTime.
 % This function is used to compute the join_procedure
 % mean time based on the signaled events
 join_procedure_mean_time() ->
-	StartedTimes = ?MODULE:get_started_join_processes(),
-	FinishedTimes = ?MODULE:get_finished_join_processes(),
-
-
+	StartedTimes = ?MODULE:get_started_join_nodes(),
+	FinishedTimes = ?MODULE:get_finished_join_nodes(),
 
 	MeanTime = ?MODULE:calculate_mean_time(StartedTimes, FinishedTimes),
 	MeanTime.
 % This function return all the processes that haven't finished the
 % join procedure
-get_unfinished_processes()->
+get_unfinished_join_nodes()->
 	StartedTimes = ?MODULE:get_events(started_join_procedure),
 	FinishedTimes = ?MODULE:get_events(finished_join_procedure),
 
@@ -86,11 +119,15 @@ flush_join_events() ->
 	empty_event_list(started_join_procedure),
 	empty_event_list(finished_join_procedure).
 
-get_started_join_processes() ->
+get_started_join_nodes() ->
 	?MODULE:get_events(started_join_procedure).
 
-get_finished_join_processes() ->
+get_finished_join_nodes() ->
 	?MODULE:get_events(finished_join_procedure).
+
+get_finished_lookup() ->
+	?MODULE:get_events(finished_lookup).
+
 
 get_bootstrap_list() ->
 	lists:foldl(
@@ -101,48 +138,59 @@ get_bootstrap_list() ->
 		?MODULE:get_events(bootstrap)
 	).
 
-get_processes_list() ->
+get_node_list() ->
 		lists:foldl(
 		fun({Pid,_,_}, Acc) ->
 			[Pid|Acc]
 		end,
 		[],
-		?MODULE:get_events(processes)
+		?MODULE:get_events(node)
 	).
 
 % This function is used to compute the mean time based on two
-% lists, the start time and the end time.
+% lists, the start times and the end times.
 % Each list is a list of tuples {Pid, time}
 calculate_mean_time(StartedTimes, FinishedTimes) ->
-	FilteredStartedTimes = [{Pid, Value, Time} || {Pid, Value, Time} <- StartedTimes, lists:keymember(Pid, 1, FinishedTimes)],
+	% Getting all the events in start times that are contained in finish times 
+	FilteredStartedTimes = [{Pid, Value, Time} || {Pid, Value, Time} <- StartedTimes, lists:keymember(Value, 2, FinishedTimes)],
+	% Getting all the events in finished times that are contained in filtered start times
+	FilteredFinishTimes = [{Pid, Value, Time} || {Pid, Value, Time} <- FinishedTimes, lists:keymember(Value, 2, FilteredStartedTimes)],
+	
+	% Sorting the lists so we can later zip them correctly
 	SortedStart = lists:sort(
-		fun({Pid1, _,_}, {Pid2, _, _}) ->
-			Pid1 > Pid2
+		fun({_, Id1, _}, {_, Id2, _}) ->
+			Id1 > Id2
 		end,
 		FilteredStartedTimes
 	),
 
 	SortedFinish = lists:sort(
-		fun({Pid1, _, _}, {Pid2, _, _}) ->
-			Pid1 > Pid2
+		fun({_, Id1, _}, {_, Id2, _}) ->
+			Id1 > Id2
 		end,
-		FinishedTimes
+		FilteredFinishTimes
 	),
 
+	% Zip the two lists and compute the total elapsed times
 	Times = lists:zip(SortedStart, SortedFinish),
-
 	TotalTime = lists:foldl(
 		fun({{_, _, Start}, {_,_,End}}, Acc) -> Acc + (End - Start) end, 
 		0, 
 		Times
 	),
 
+	% Compute the mean time
 	Count = length(Times),
 	case Count of
 		0 -> 0;
 		_ -> TotalTime div Count
 	end.
 
+
+% ------------------------------------------
+% ANALYTICS COLLECTOR BASE FUNCTIONALITY
+% ------------------------------------------
+%
 % ------------------------------------------
 % LISTENERS MANAGEMENT
 % ------------------------------------------
@@ -221,8 +269,13 @@ handle_cast({new_listener, Pid, EventType}, State) ->
 	if(ListenersMap == undefined) ->
 		put(listeners, #{EventType=>[Pid]});
 	true ->
-		EventListeners = maps:get(EventType, ListenersMap),
-		NewEventListeners = [Pid|EventListeners],
+		case (maps:is_key(EventType,ListenersMap)) of
+			true->
+				EventListeners = maps:get(EventType, ListenersMap),
+				NewEventListeners = [Pid|EventListeners];
+			false ->
+				NewEventListeners = [Pid]
+		end,
 		NewListenersMap = maps:put(EventType, NewEventListeners, ListenersMap),
 		put(listeners, NewListenersMap)
 	end,

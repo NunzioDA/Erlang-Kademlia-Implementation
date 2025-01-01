@@ -26,7 +26,8 @@ start(Function) ->
             Function()
         end
     ),
-    ?MODULE:save_thread(Pid)
+    ?MODULE:save_thread(Pid),
+    Pid
 .
 
 kill(Thread) ->

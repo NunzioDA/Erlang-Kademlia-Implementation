@@ -52,8 +52,7 @@ init([K, T, InitAsBootstrap, Verbose]) ->
     Bucket_Size = 20,
 
     Pid = spare_node_manager:start(RoutingTable, K),
-    republisher:start(ValuesTable, RoutingTable, K, T, Bucket_Size),
-
+    republisher:start(RoutingTable, K, T, Bucket_Size),
     analytics_collector:enroll_node(),
 
     if InitAsBootstrap ->
@@ -455,8 +454,7 @@ async_request_handler({store, Key, Value}, State) ->
     analytics_collector:stored_value(Key),
     {noreply, State};
 async_request_handler({distribute_value, Key, Value}, State) ->
-    {RoutingTable, _,K,_,Bucket_Size} = State,
-    thread:start(fun() -> ?MODULE:distribute_value(Key,Value, RoutingTable, K, Bucket_Size) end),
+    republisher:add_pair(Key, Value),
     {noreply, State};
 async_request_handler({talk},State) ->
     utils:set_verbose(true),

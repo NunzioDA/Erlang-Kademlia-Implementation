@@ -8,10 +8,10 @@
 -module(node).
 -behaviour(gen_server).
 -export([init/1, handle_call/3, handle_cast/2, terminate/2, kill/1]).
--export([start/3, start/4, ping/1, distribute_value/5, send_request/2, lookup/3, shell_find_nearest_nodes/2]).
+-export([start/3, start/4, ping/1, distribute_value/5, send_request/4, lookup/3, shell_find_nearest_nodes/2]).
 -export([distribute/3, lookup/2, get_routing_table/1, talk/1, shut/1, start_server/4]).
 -export([save_node/4, branch_lookup/2, find_node/7, find_node/4, get_value/3, request_handler/3, delete_node/3]).
--export([async_request_handler/2, find_k_nearest_node/5, lookup_for_value/4, find_k_nearest_node/4, join/4]).
+-export([async_request_handler/2, find_k_nearest_node/6, lookup_for_value/5, find_k_nearest_node/4]).
 
 % Starts a new node in the Kademlia network.
 % K -> Number of bits to represent a node ID.
@@ -51,7 +51,7 @@ init([K, T, InitAsBootstrap, Verbose]) ->
     % Define the bucket size for routing table entries.
     Bucket_Size = 20,
 
-    Pid = spare_node_manager:start(RoutingTable, K),
+    SpareNodeManager = spare_node_manager:start(RoutingTable, K),
     republisher:start(RoutingTable, K, T, Bucket_Size),
     analytics_collector:enroll_node(),
 
@@ -60,7 +60,7 @@ init([K, T, InitAsBootstrap, Verbose]) ->
     true -> ok
     end,
     
-    ?MODULE:join(RoutingTable, K, Bucket_Size, Pid),
+    join_thread:start(K,RoutingTable,Bucket_Size,SpareNodeManager),
 
     % Return the initialized state, containing ETS tables and configuration parameters.
     {ok, {RoutingTable, ValuesTable, K, T, Bucket_Size}}.
@@ -178,10 +178,17 @@ delete_node(NodePid, RoutingTable, K) when is_pid(NodePid)->
     case ets:lookup(RoutingTable, BranchID) of
         [{BranchID, NodeList}] ->
             NewNodeList = lists:filter(fun({_, Pid}) -> Pid =/= NodePid end, NodeList),
-            ets:insert(RoutingTable, {BranchID, NewNodeList});
+
+            LenBefore = length(NodeList),
+            LenAfter = length(NewNodeList),
+            if LenBefore /= LenAfter ->
+                ets:insert(RoutingTable, {BranchID, NewNodeList}),
+                join_thread:deleted_node();
+            true -> ok
+            end;
+
         [] -> ok
     end.
-
 
 % This function is used to lookup for the nodes list in a branch.
 branch_lookup(RoutingTable, BranchId) ->
@@ -385,11 +392,11 @@ request_handler(ping, _, State) ->
 % This function is used to find a value in the network 
 % from the shell
 request_handler({shell_lookup, Key, Verbose}, _, State) ->
-    {_,_,K,_,_} = State,
+    {RoutingTable,_,K,_,_} = State,
     thread:start(
         fun() ->
             EventId = analytics_collector:started_lookup(),
-            case ?MODULE:lookup_for_value(Key, K, [{com:my_hash_id(K), com:my_address()}], []) of
+            case ?MODULE:lookup_for_value(Key, K, [{com:my_hash_id(K), com:my_address()}], [], RoutingTable) of
                 {value_not_found, empty} ->
                     if(Verbose) ->
                         utils:print("[~p] Value ~p not found~n", [com:my_address(), Key]);
@@ -478,14 +485,18 @@ terminate(Reason, _State) ->
 %  NODE AS A CLIENT
 %----------------------------------------------
 %
-send_request(Pid,Request) -> 
+send_request(Pid,Request,RoutingTable, K) -> 
     case com:send_request(Pid, Request) of
         {error, Reason} ->
-            ShellPid = whereis(shellPid),
-            if ShellPid /= self()->
-                com:send_async_request(com:my_address(),{delete_node, Pid});                
+            ItsParentNode = self() == com:my_address(),
+            if ItsParentNode -> % If the parent node is the sender, delete the node from the routing table.
+                ?MODULE:delete_node(Pid, RoutingTable, K);
             true->
-                ok
+                PidInRouting = utils:pid_in_routing_table(RoutingTable, Pid, K),
+                if(PidInRouting) ->
+                    com:send_async_request(com:my_address(), {delete_node, Pid});
+                true -> ok
+                end
             end,
             {error,Reason};
         Response -> Response
@@ -497,20 +508,20 @@ find_k_nearest_node(RoutingTable, HashID, BucketSize, K) ->
     % Retrieve the initial list of closest nodes from the routing table.
     NodeList = ?MODULE:find_node(RoutingTable, BucketSize, K, HashID),
     % Begin the recursive search to refine the closest node list.
-    ?MODULE:find_k_nearest_node(HashID, BucketSize, K, NodeList, []).
+    ?MODULE:find_k_nearest_node(RoutingTable, HashID, BucketSize, K, NodeList, []).
 
 % Base case: If there are no more nodes to contact, return the sorted list of the K 
 % closest nodes.
-find_k_nearest_node(HashID, BucketSize, _, [], ContactedNodes) -> 
+find_k_nearest_node(_, HashID, BucketSize, _, [], ContactedNodes) -> 
     % Sort the contacted nodes by proximity to the HashID and return the top K nodes.
     NoDuplicate = utils:remove_duplicates(ContactedNodes),
     SortedNodeList = utils:sort_node_list(NoDuplicate, HashID),
     lists:sublist(SortedNodeList, BucketSize);
 % Recursive case: Process the next node in the list of candidates.
-find_k_nearest_node(HashID, BucketSize, K, [{NodeHash, NodePid}|T], ContactedNodes) ->
+find_k_nearest_node(RoutingTable, HashID, BucketSize, K, [{NodeHash, NodePid}|T], ContactedNodes) ->
     % Log the node being contacted for debugging purposes.
     % Send a request to the node to find its closest nodes to the HashID.
-    case ?MODULE:send_request(NodePid, {find_node, HashID}) of
+    case ?MODULE:send_request(NodePid, {find_node, HashID},RoutingTable,K) of
         {ok, NodeList} ->
             % Filter the returned node list to exclude nodes already contacted or com:my_address.
             FilteredNodeList = lists:filter(
@@ -529,10 +540,10 @@ find_k_nearest_node(HashID, BucketSize, K, [{NodeHash, NodePid}|T], ContactedNod
             % Add the current node to the list of contacted nodes.
             NewContactedNodes = lists:append(ContactedNodes, [{NodeHash, NodePid}]),
             % Recursively continue searching with the updated lists.
-            Result = ?MODULE:find_k_nearest_node(HashID, BucketSize, K, K_NodeList, NewContactedNodes);
+            Result = ?MODULE:find_k_nearest_node(RoutingTable, HashID, BucketSize, K, K_NodeList, NewContactedNodes);
         % If the request fails, skip the current node and continue with the rest.
         _ -> 
-            Result = ?MODULE:find_k_nearest_node(HashID, BucketSize, K, T, ContactedNodes)
+            Result = ?MODULE:find_k_nearest_node(RoutingTable, HashID, BucketSize, K, T, ContactedNodes)
     end,
     Result.
 
@@ -541,7 +552,6 @@ find_k_nearest_node(HashID, BucketSize, K, [{NodeHash, NodePid}|T], ContactedNod
 distribute_value(Key, Value, RoutingTable, K, Bucket_Size) ->
     KeyHashId = utils:k_hash(Key, K),
     NodeList = ?MODULE:find_k_nearest_node(RoutingTable, KeyHashId, Bucket_Size, K),
-    utils:debug_print("Publishing [~p,~p] to:~n~p~n",[Key, Value, NodeList]),
     lists:foreach(
         fun({_NodeHashId, NodePid}) ->
             com:send_async_request(NodePid, {store, Key, Value})
@@ -552,27 +562,21 @@ distribute_value(Key, Value, RoutingTable, K, Bucket_Size) ->
 % Finds the value associated with a given key in the network
 % by sending find_value requests to node that are every time closer to
 % the given value
-lookup_for_value(_, _, [], _) ->
+lookup_for_value(_, _, [], _, _) ->
     {value_not_found, empty};
-lookup_for_value(Key, K, [{_, Pid} | T], ContactedNodes) ->
-    case ?MODULE:send_request(Pid, {find_value, Key}) of
+lookup_for_value(Key, K, [{_, Pid} | T], ContactedNodes, RoutingTable) ->
+    case ?MODULE:send_request(Pid, {find_value, Key}, RoutingTable, K) of
         {nodes_list, NodeList} ->
             NextNodesList = NodeList ++ T, 
             NewContactedNodes = [Pid | ContactedNodes],
             NewNodeList = utils:remove_contacted_nodes(NextNodesList, NewContactedNodes),
             SortedNodeList = utils:sort_node_list(NewNodeList, utils:k_hash(Key,K)),
 
-            ?MODULE:lookup_for_value(Key, K, SortedNodeList, NewContactedNodes);
+            ?MODULE:lookup_for_value(Key, K, SortedNodeList, NewContactedNodes, RoutingTable);
         {ok, ValueKey, Value} ->
             {ok, ValueKey, Value};
-        _ -> ?MODULE:lookup_for_value(Key,K, T, [Pid | ContactedNodes])
+        _ -> ?MODULE:lookup_for_value(Key,K, T, [Pid | ContactedNodes],RoutingTable)
     end.
-
-% Function to join the network. If no nodes exist, the actor becomes the bootstrap node.
-% Otherwise, it contacts the existing bootstrap node.
-join(RoutingTable, K, BucketSize, SpareNodeManager) ->
-    join_thread:start(K,RoutingTable,BucketSize,SpareNodeManager).
-
 
 
 

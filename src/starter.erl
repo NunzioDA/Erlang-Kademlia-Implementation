@@ -8,7 +8,7 @@
 - module(starter).
 
 - export([start/0, registerShell/0, start_kademlia_network/4, test_dying_process/0, pick_random_pid/1,test_join_mean_time/0]).
-- export([wait_for_network_to_converge/1, wait_for_progress/1, destroy/0, test_lookup_meantime/0,wait_for_lookups/1]).
+- export([wait_for_network_to_converge/1, wait_for_progress/1, destroy/0, test_lookup_meantime/0,wait_for_lookups/1, test_republisher/0]).
 
 % This function is used to start the enviroment
 % before starting the simulation
@@ -51,6 +51,7 @@ start_kademlia_network(Bootstraps, Nodes, K,T) ->
         end,
         lists:seq(1,Nodes)
     ).
+
 
 % -------------------------------------------------
 % TESTS FUNCTION
@@ -221,6 +222,71 @@ test_lookup_meantime() ->
     utils:print("~nMean time for lookup aftert killing ~p nodes near 'foo': ~pms~n",[NodesToKill, LookupMeanTime2])
 .
 
+test_republisher() ->
+    start(),
+    BootstrapNodes = 10,
+    Nodes = 5000,
+    K = 5,
+    T = 5000,
+
+    utils:print("TEST: republisher~n~n"),
+    analytics_collector:listen_for(finished_join_procedure),
+
+    ?MODULE:start_kademlia_network(BootstrapNodes,Nodes,K,T),
+    ?MODULE:wait_for_network_to_converge(Nodes),
+
+    utils:print("~nSaving 'foo' => 0 in the network...~n"),
+    [BootstrapNode | _] = analytics_collector:get_bootstrap_list(),
+    node:distribute(BootstrapNode,"foo", 0),
+
+
+    timer:sleep(2000),
+    analytics_collector:listen_for(stored_value),
+    utils:print("~n~nGetting the nodes that stored 'foo'...~n"),
+    NearestNodes = analytics_collector:get_nodes_that_stored("foo"),
+
+    utils:print("Node that stored foo: ~p~n", [NearestNodes]),
+
+    LenNearestNodes = length(NearestNodes),
+    NodesToKill = LenNearestNodes - 1,
+    utils:print("Killing ~p nodes...~n", [NodesToKill]),
+    lists:foreach(
+        fun(I)->
+            NearNode = lists:nth(I,NearestNodes),
+            % Ping1=node:ping(NearNode),
+            % utils:print("~p~n",[Ping1]),
+            node:kill(NearNode)
+            % Ping2=node:ping(NearNode),
+            % utils:print("~p~n",[Ping2])
+        end,  
+        lists:seq(1, NodesToKill)
+    ),
+    
+    OnlyNodeAlive = lists:nth(20,NearestNodes),
+    
+    utils:print("~nOnly node that stored 'foo' alive: ~p~n", [OnlyNodeAlive]),
+
+
+    analytics_collector:flush_nodes_that_stored(),
+    utils:print("~nWaiting for new nodes to receive the value~n"),
+    wait_for_progress(
+        fun() ->
+            receive 
+                {event_notification, stored_value, _} ->
+                    NewNodesStoringFoo = analytics_collector:get_nodes_that_stored("foo"),
+                    length(NewNodesStoringFoo) / 20
+            after 10000 ->
+                1
+            end
+        end
+    ),
+
+    NewNearestNodes = analytics_collector:get_nodes_that_stored("foo"),
+
+    utils:print("~nNew nodes storing foo: ~p~n", [NewNearestNodes])
+
+.  
+
 % --------------------------------------
 % TEST TOOLS
 % --------------------------------------
@@ -267,7 +333,7 @@ wait_for_network_to_converge(Started) ->
             Unfinished = analytics_collector:get_unfinished_join_nodes(),
             if length(Unfinished) > 0 ->
                 receive
-                    {event_notification, _, _} ->
+                    {event_notification, finished_join_procedure, _} ->
 
                         Finished = analytics_collector:get_finished_join_nodes(),
                         Progress = length(Finished) / Started,

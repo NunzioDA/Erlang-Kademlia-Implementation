@@ -131,10 +131,11 @@ empty_branches(RoutingTable, K) ->
     AnyEmpty.
 
 pid_in_routing_table(RoutingTable, Pid, K) ->
-    BranchId = ?MODULE:get_subtree_index(?MODULE:k_hash(Pid, K), ?MODULE:k_hash(com:my_address(), K)),
+    BranchId = ?MODULE:get_subtree_index(?MODULE:k_hash(Pid, K), com:my_hash_id(K)),
+    
     case ets:lookup(RoutingTable, BranchId) of
         [{_, NodeList}] ->
-            lists:member(Pid, NodeList);
+            lists:keymember(Pid, 2, NodeList);
         _ ->
             false
     end.

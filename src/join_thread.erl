@@ -9,22 +9,56 @@
 %
 -module(join_thread).
 -export([start/4, join_procedure_starter/3, join_procedure_starter/4, join_procedure/6, pick_bootstrap/0, nearest_bootstrap/1]).
+-export([check_deletion_message/3, check_for_empty_branches/3, deleted_node/0]).
 
 % This function starts the thread signaling the
 % start and the end of the join procedure to the
 % analytics_collector
 start(K, RoutingTable, BucketSize,SpareNodeManager) ->
     % Starting a new process to join the network.
-    thread:start(
+    Pid = thread:start(
         fun() -> 
             put(spare_node_manager, SpareNodeManager),
+
             EventId = analytics_collector:started_join_procedure(),
-            join_procedure_starter(RoutingTable, K, BucketSize),
-            analytics_collector:finished_join_procedure(EventId)
+            ?MODULE:join_procedure_starter(RoutingTable, K, BucketSize),
+            analytics_collector:finished_join_procedure(EventId),
+
+            ?MODULE:check_deletion_message(RoutingTable, K, BucketSize)
         end
-    )
+    ),
+    put(join_thread_pid, Pid),
+    Pid
 .
 
+deleted_node() ->
+    case get(join_thread_pid) of
+        undefined -> utils:print("Start a join thread before deleting nodes");
+        Pid -> Pid ! {deleted_node}
+    end. 
+
+% This function checks if the node has been deleted from the network
+% and if so it starts the check_for_empty_branches function
+% to check if there are empty branches in the routing table.
+check_deletion_message(RoutingTable, K, BucketSize) ->
+    receive
+        {deleted_node} ->
+            ?MODULE:check_for_empty_branches(RoutingTable, K, BucketSize)
+
+    after 1000 -> 
+        ok         
+    end,
+
+    ?MODULE:check_deletion_message(RoutingTable, K, BucketSize).
+
+% This function checks if there are empty branches in the routing table
+% and if so it starts the join procedure again.
+check_for_empty_branches(RoutingTable, K, BucketSize) ->
+    EmptyBranches = utils:empty_branches(RoutingTable, K),
+    if EmptyBranches -> 
+        ?MODULE:join_procedure_starter(RoutingTable, K, BucketSize);
+    true -> ok
+    end.
 
 % This function is used to pick a random bootstrap node
 % from those signaled to the analytics_collector
@@ -126,7 +160,7 @@ join_procedure([{_,NodePid} | T], RoutingTable, K, K_Bucket_Size, ContactedNodes
             % the branches with the sender.
             % The variable FilledBranches contains the branches that are already filled, 
             % allowing the receiver to ignore them and return only what's needed.
-            case node:send_request(NodePid, {fill_my_routing_table, FilledBranches}) of
+            case node:send_request(NodePid, {fill_my_routing_table, FilledBranches}, RoutingTable, K) of
                 {ok, {Branches}} -> 
                     % saving all the new nodes
                     lists:foreach(
@@ -144,8 +178,6 @@ join_procedure([{_,NodePid} | T], RoutingTable, K, K_Bucket_Size, ContactedNodes
                 
                     % Dont stop contacting known nodes until there 
                     % are no empty branches
-                    %%% HalfBucket = K_Bucket_Size div 2,
-                    %%% BranchesWithLessThenHalf = utils:branches_with_less_then(RoutingTable, HalfBucket, K),
                     EmptyBranches = utils:empty_branches(RoutingTable, K),
                     if EmptyBranches ->
                         LastFilledBranchesLen = length(LastFilledBranches),

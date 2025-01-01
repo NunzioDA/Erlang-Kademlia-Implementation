@@ -82,6 +82,8 @@ pick_bootstrap() ->
 
 nearest_bootstrap(K) ->
     BootstrapList = analytics_collector:get_bootstrap_list(),
+    % Filtering out the node itself and 
+    % converting the list to a list of {hash, pid}
     BootstrapListFiltered =lists:foldl(
         fun(Pid, Acc) ->
             case Pid =:= com:my_address() of 
@@ -96,7 +98,7 @@ nearest_bootstrap(K) ->
     case length(BootstrapListFiltered) of
         0 -> -1;
         _ ->                    
-            [First|_] = utils:sort_node_list(BootstrapListFiltered, com:my_hash_id(K)),
+            [{_,First}|_] = utils:sort_node_list(BootstrapListFiltered, com:my_hash_id(K)),
             First
     end.
 
@@ -113,6 +115,7 @@ join_procedure_starter(RoutingTable, K, K_Bucket_Size, LastResult)->
         {ok, nearest_bootstrap} ->
             BootstrapPid = ?MODULE:nearest_bootstrap(K)
     end,
+    % utils:print("Joining node ~p~n", [BootstrapPid]),
     if(is_pid(BootstrapPid)) ->
         BootstrapHash = utils:k_hash(BootstrapPid, K),
         Result = ?MODULE:join_procedure([{BootstrapHash, BootstrapPid}], RoutingTable, K, K_Bucket_Size, [], []),
@@ -121,7 +124,8 @@ join_procedure_starter(RoutingTable, K, K_Bucket_Size, LastResult)->
         EmptyBranches = utils:empty_branches(RoutingTable, K),
         if EmptyBranches ->
             ?MODULE:join_procedure_starter(RoutingTable, K, K_Bucket_Size, Result);
-        true -> ok
+        true -> 
+            ok
         end;
     true -> 
         ?MODULE:join_procedure_starter(RoutingTable, K, K_Bucket_Size, {ok, random_bootstrap})
@@ -151,7 +155,11 @@ join_procedure([{_,NodePid} | T], RoutingTable, K, K_Bucket_Size, ContactedNodes
             Tab2List
         ),
         FilledBranchesLen = length(FilledBranches),
-        if FilledBranchesLen < K ->
+        % If the node didn't have any filled branches or if it's the first node contacted
+        % contact the new node.
+        % We check the contact list length is different from 0 to make
+        % sure small networks can converge.
+        if FilledBranchesLen < K orelse length(ContactedNodes) == 0-> 
             % Sending request to the saved node, asking for new nodes.
             % This request will return the nodes in the opposite branches
             % relative to each consecutive shared bit in the head of the hash id.

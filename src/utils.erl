@@ -6,7 +6,7 @@
 % -----------------------------------------------------------------------------
 
 - module(utils).
-- export([k_hash/2, get_subtree_index/2, xor_distance/2, sort_node_list/2, print_progress/1]).
+- export([k_hash/2, get_subtree_index/2, xor_distance/2, sort_node_list/2, print_progress/2]).
 - export([empty_branches/2, remove_duplicates/1, remove_contacted_nodes/2, print/1, print/2]).
 - export([to_bit_list/1, print_routing_table/2, debug_print/1, debug_print/2, do_it_if_verbose/1]).
 - export([verbose/0, set_verbose/1,most_significant_bit_index/1, most_significant_bit_index/2, pid_in_routing_table/3]).
@@ -121,6 +121,7 @@ empty_branches(RoutingTable, K) ->
         fun(Element) ->
             case ets:lookup(RoutingTable,Element) of
                 [{_,[]}] -> true;
+                [] -> true;
                 _ ->
                     false
             end
@@ -192,13 +193,16 @@ do_it_if_verbose(Fun) ->
     end.
 
 % This function is used to print a progress bar
-print_progress(ProgressRatio) ->
+print_progress(ProgressRatio, PrintBar) ->
     Progress = round(ProgressRatio * 100),
-    MaxLength = 30,
-    CompletedLength = round(ProgressRatio * MaxLength),
-    IncompleteLength = MaxLength - CompletedLength,
-    Bar = "[" ++ lists:duplicate(CompletedLength, $=) 
-              ++ lists:duplicate(IncompleteLength, $\s) 
-              ++ "] ",
-    io:format("\r~s ~3B%  ", [Bar, Progress]),
-    ok.
+    if PrintBar ->
+        MaxLength = 30,
+        CompletedLength = round(ProgressRatio * MaxLength),
+        IncompleteLength = MaxLength - CompletedLength,
+        Bar = "[" ++ lists:duplicate(CompletedLength, $=) 
+                ++ lists:duplicate(IncompleteLength, $\s) 
+                ++ "] ";
+    true ->
+        Bar = ""
+    end,
+    io:format("\r~s ~3B%  ", [Bar, Progress]).

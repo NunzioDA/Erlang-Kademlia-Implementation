@@ -44,7 +44,6 @@ start_kademlia_network(Bootstraps, Nodes, K,T) ->
         end,
         lists:seq(1,Bootstraps)
     ),
-
     lists:foreach(
         fun(_) ->
             node:start(K, T, false)
@@ -75,7 +74,8 @@ test_dying_process() ->
 
 
     utils:print("Waiting for the network to converge~n"),
-    ?MODULE:wait_for_network_to_converge(Nodes),
+    TotalNodes = Nodes + BootstrapNodes,
+    ?MODULE:wait_for_network_to_converge(TotalNodes),
     
     utils:print("Requiring routing table to the bootstrapnode[~p]...~n",[BootstrapNode]),
     {ok, RoutingTable} = node:get_routing_table(BootstrapNode),
@@ -181,7 +181,7 @@ test_lookup_meantime() ->
     [BootstrapNode | _] = analytics_collector:get_bootstrap_list(),
     node:distribute(BootstrapNode,"foo", 0),
     % Waiting to make sure the value is delivered
-    timer:sleep(1000),
+    timer:sleep(2000),
 
     Lookups = 5,
     utils:print("~nExecuting ~p lookups for 'foo'~n",[Lookups]),
@@ -235,8 +235,8 @@ test_republisher() ->
     ?MODULE:start_kademlia_network(BootstrapNodes,Nodes,K,T),
     ?MODULE:wait_for_network_to_converge(Nodes),
 
-    utils:print("~nSaving 'foo' => 0 in the network...~n"),
     [BootstrapNode | _] = analytics_collector:get_bootstrap_list(),
+    utils:print("~nSaving 'foo' => 0 in the network with node ~p...~n", [BootstrapNode]),
     node:distribute(BootstrapNode,"foo", 0),
 
 
@@ -302,22 +302,24 @@ pick_random_pid(RoutingTable) ->
     end.
 
 wait_for_lookups(Lookups)->
-    utils:print_progress(0),
+    utils:print_progress(0, false),
     wait_for_progress(
         fun() ->
             RandomBootstrap = join_thread:pick_bootstrap(),
-            Finished = analytics_collector:get_finished_lookup(),
-            LenFinished = length(Finished) + 1,
+            
             % Verbose = LenFinished == Lookups,
             node:lookup(RandomBootstrap,"foo", true),
             receive
                 {event_notification, finished_lookup, _} ->
+                    Finished = analytics_collector:get_finished_lookup(),
+                    LenFinished = length(Finished),
                     Progress = LenFinished / Lookups,
                     Progress
             after 20000 ->
                 1
             end
-        end
+        end,
+        false
     ).
 
 % This function waits for the network to converge
@@ -327,7 +329,7 @@ wait_for_lookups(Lookups)->
 % call analytics_collector:listen_for(finished_join_procedure)
 % before calling wait_for_network_to_converge
 wait_for_network_to_converge(Started) -> 
-    utils:print_progress(0),   
+    utils:print_progress(0, true),   
     wait_for_progress(
         fun() ->
             Unfinished = analytics_collector:get_unfinished_join_nodes(),
@@ -339,20 +341,7 @@ wait_for_network_to_converge(Started) ->
                         Progress = length(Finished) / Started,
                         Progress
                 after 8000 ->
-                    % utils:print("MAKE HIM TALK"),
-                    % [First | _] = analytics_collector:get_unfinished_join_nodes(),
-                    % node:talk(First),                    
-                    % Processes = analytics_collector:get_node_list(),
-                    % Hashes = lists:foldl(
-                    %     fun(E, Acc) ->
-                    %        [utils:to_bit_list(utils:k_hash(E,5))|Acc]
-                    %     end,
-                    %     [],
-                    %     Processes    
-                    % ),
-                    % {ok, File} = file:open("../data/processes.txt", [write]),
-                    % lists:foreach(fun(Pid) -> io:fwrite(File, "~p~n", [Pid]) end, Hashes),
-                    % file:close(File),
+                    
                     1
                 end;
             true -> 1
@@ -365,13 +354,15 @@ wait_for_network_to_converge(Started) ->
 % visualizing a progress bar based on Progress.
 % Progress is a function used to compute the current progress.
 % The function ends when Progress reaches 1.
-wait_for_progress(Progress) -> 
+wait_for_progress(Progress) ->
+    wait_for_progress(Progress, true).
+wait_for_progress(Progress, PrintBar) -> 
     CurrentProgress = Progress(),
-    utils:print_progress(CurrentProgress),
+    utils:print_progress(CurrentProgress,PrintBar),
     if CurrentProgress == 1 ->
         ok;
     true ->
-        wait_for_progress(Progress)
+        wait_for_progress(Progress,PrintBar)
     end.
 
 destroy() ->

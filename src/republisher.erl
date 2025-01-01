@@ -7,38 +7,68 @@
 % -----------------------------------------------------------------------------
 
 -module(republisher).
--export([start/5, republish_behaviour/5]).
+-export([start/4, add_pair/2, republish_behaviour/6, check_for_new_pairs/4]).
 
 % The republisher thread is started executing the
 % republish_behaviour
-start(ValuesTable, RoutingTable, K, T, BucketSize) ->
-    thread:start(
+start(RoutingTable, K, T, BucketSize) ->
+    Pid = thread:start(
         fun()->
-            ?MODULE:republish_behaviour(ValuesTable, RoutingTable, K, T, BucketSize)
+            CurrentMillis = erlang:monotonic_time(millisecond),            
+            ?MODULE:republish_behaviour(#{},RoutingTable, K, T, BucketSize, CurrentMillis)
         end
-    )
+    ),
+    put(republisher_pid, Pid),
+    Pid
 .
+
+add_pair(Key, Value) ->
+    case get(republisher_pid) of
+        undefined -> utils:print("Start a republisher before adding pairs");
+        Pid -> Pid ! {new_pair, Key, Value}
+    end.
+
+check_for_new_pairs(ValuesTable, RoutingTable, K, BucketSize) ->
+    receive
+        {new_pair, Key, Value} ->
+            NewMap = maps:put(Key,Value,ValuesTable),
+            node:distribute_value(Key, Value, RoutingTable, K, BucketSize),
+            NewMap
+    after 10 -> % This has to be 10 ms to avoid blocking the network
+        ValuesTable
+    end.
 
 % Every T seconds the republisher takes the ValuesMap and foreach 
 % value it starts a store procedure
-republish_behaviour(ValuesTable, RoutingTable, K, T, BucketSize) ->
-    timer:sleep(T),
+republish_behaviour(ValuesTable, RoutingTable, K, T, BucketSize, LastMillis) ->
     % Update verbosity
     thread:check_verbose(),
-    % Republish every element in the value table
-    ValuesMapList = ets:tab2list(ValuesTable),
-    lists:foreach(
-        fun({_, ValuesMap}) ->
-            ValueList = maps:to_list(ValuesMap),
-            lists:foreach(
-                fun({Key,Value}) ->
-                    node:distribute_value(Key, Value, RoutingTable, K, BucketSize)
-                end,
-                ValueList
-            )
-        end,
-        ValuesMapList
-    ),
+    CheckValueTable = ?MODULE:check_for_new_pairs(ValuesTable, RoutingTable, K, BucketSize),
+
+    CurrentMillis = erlang:monotonic_time(millisecond),
+    DeltaMillis = CurrentMillis - LastMillis,
+
+    if DeltaMillis >= T ->
+
+        % Republish every element in the value table
+        ValueList = maps:to_list(CheckValueTable),
+        NewValueTable = lists:foldl(
+            fun({Key,Value}, PreviousValueTable) ->
+                % Checking for new pairs while republishing the old ones
+                NewValueTable = ?MODULE:check_for_new_pairs(PreviousValueTable, RoutingTable, K, BucketSize),
+                % Republishing old pairs
+                node:distribute_value(Key, Value, RoutingTable, K, BucketSize),
+                NewValueTable
+            end,
+            CheckValueTable,
+            ValueList
+        ),        
+        NewMillis = erlang:monotonic_time(millisecond);
+    true ->
+        NewValueTable = CheckValueTable,
+        NewMillis = LastMillis
+    end,
+
     % Repeat
-    ?MODULE:republish_behaviour(ValuesTable, RoutingTable, K, T, BucketSize)
+    ?MODULE:republish_behaviour(NewValueTable, RoutingTable, K, T, BucketSize, NewMillis)
 .

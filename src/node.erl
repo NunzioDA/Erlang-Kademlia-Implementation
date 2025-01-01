@@ -129,46 +129,51 @@ ping(NodePid) when is_pid(NodePid) ->
 % RoutingTable: the table where store the information.
 % K: The number of bits used for the node's hash_id representation.
 save_node(NodePid, RoutingTable, K, K_Bucket_Size) when is_pid(NodePid) ->
-    NodeHashId = utils:k_hash(NodePid, K),
-    % Determine the branch ID in the routing table corresponding to the hash ID.
-    BranchID = utils:get_subtree_index(NodeHashId, com:my_hash_id(K)),
+    
+    ShellPid = whereis(shellPid),
+    if(NodePid /= ShellPid) ->
+        NodeHashId = utils:k_hash(NodePid, K),
+        % Determine the branch ID in the routing table corresponding to the hash ID.
+        BranchID = utils:get_subtree_index(NodeHashId, com:my_hash_id(K)),
 
-   % Check if the branch ID already exists in the routing table.
-    case ets:lookup(RoutingTable, BranchID) of
-        % If the branch doesn't exist, create a new list for this branch.
-        [] -> 
-            % Insert the new node into a fresh list and store it in the table.
-            NewList = [{NodeHashId, NodePid}],
-            ets:insert(RoutingTable, {BranchID, NewList});  
-        % If the branch exists in the routing table, update the list of nodes
-        % in that branch.
-        [{BranchID, NodeList}] -> 
-            % Check if the node is already in the list.
-            case lists:member({NodeHashId,NodePid}, NodeList) of
-                true ->
-                    % If the node is already in the list, move it to the end
-                    RemovedNodeList = lists:filter(
-                        fun({_, ElementPid}) -> 
-                            ElementPid /= NodePid 
-                        end, 
-                        NodeList
-                    ),
-                    NewNodeList = RemovedNodeList ++ [{NodeHashId, NodePid}],
-                    ets:insert(RoutingTable, {BranchID, NewNodeList});
-                % If the node is not in the list, add it to the tail.
-                false -> 
-                    % Check if the list is full or not.
-                    case length(NodeList) < K_Bucket_Size of
-                        % If the list is not full, add the new node to the tail.
-                        true -> 
-                            NewNodeList = NodeList ++ [{NodeHashId, NodePid}],
-                            ets:insert(RoutingTable, {BranchID, NewNodeList});
-                        % If the list is full, check the last node in the list.
-                        false -> 
-                            % Delegating spare node to the spare_node_manager
-                           spare_node_manager:delegate(NodePid)
-                    end
-            end
+        % Check if the branch ID already exists in the routing table.
+        case ets:lookup(RoutingTable, BranchID) of
+            % If the branch doesn't exist, create a new list for this branch.
+            [] -> 
+                % Insert the new node into a fresh list and store it in the table.
+                NewList = [{NodeHashId, NodePid}],
+                ets:insert(RoutingTable, {BranchID, NewList});  
+            % If the branch exists in the routing table, update the list of nodes
+            % in that branch.
+            [{BranchID, NodeList}] -> 
+                % Check if the node is already in the list.
+                case lists:member({NodeHashId,NodePid}, NodeList) of
+                    true ->
+                        % If the node is already in the list, move it to the end
+                        RemovedNodeList = lists:filter(
+                            fun({_, ElementPid}) -> 
+                                ElementPid /= NodePid 
+                            end, 
+                            NodeList
+                        ),
+                        NewNodeList = RemovedNodeList ++ [{NodeHashId, NodePid}],
+                        ets:insert(RoutingTable, {BranchID, NewNodeList});
+                    % If the node is not in the list, add it to the tail.
+                    false -> 
+                        % Check if the list is full or not.
+                        case length(NodeList) < K_Bucket_Size of
+                            % If the list is not full, add the new node to the tail.
+                            true -> 
+                                NewNodeList = NodeList ++ [{NodeHashId, NodePid}],
+                                ets:insert(RoutingTable, {BranchID, NewNodeList});
+                            % If the list is full, check the last node in the list.
+                            false -> 
+                                % Delegating spare node to the spare_node_manager
+                            spare_node_manager:delegate(NodePid)
+                        end
+                end
+        end;
+    true -> ok
     end.
 
 % This function delete a node from the routing table

@@ -9,7 +9,7 @@
 - export([k_hash/2, get_subtree_index/2, xor_distance/2, sort_node_list/2, print_progress/1]).
 - export([empty_branches/2, remove_duplicates/1, remove_contacted_nodes/2, print/1, print/2]).
 - export([to_bit_list/1, print_routing_table/2, debug_print/1, debug_print/2, do_it_if_verbose/1]).
-- export([verbose/0, set_verbose/1,most_significant_bit_index/1, most_significant_bit_index/2, branches_with_less_then/3]).
+- export([verbose/0, set_verbose/1,most_significant_bit_index/1, most_significant_bit_index/2, pid_in_routing_table/3]).
 
 
 % This function is used to convert a bitstring into a list of bits.
@@ -113,14 +113,16 @@ remove_contacted_nodes(NodesList, ContactedNodes) ->
         end
     end, [], NodesList).
 
-% 
+% This function is used to check if 
+% there are empty branches in the routing table.
 empty_branches(RoutingTable, K) ->
 
     AnyEmpty = lists:any(
         fun(Element) ->
             case ets:lookup(RoutingTable,Element) of
-                [] -> true;
-                _ -> false
+                [{_,[]}] -> true;
+                _ ->
+                    false
             end
         end,
         lists:seq(1,K)    
@@ -128,16 +130,14 @@ empty_branches(RoutingTable, K) ->
 
     AnyEmpty.
 
-branches_with_less_then(RoutingTable, MinElems, K) ->
-    Tab2List = ets:tab2list(RoutingTable),
-    ControlList = lists:filter(
-        fun({_, NodeList}) ->
-           length(NodeList) < MinElems 
-        end,
-        Tab2List    
-    ),
-    length(ControlList) =< K.
-
+pid_in_routing_table(RoutingTable, Pid, K) ->
+    BranchId = ?MODULE:get_subtree_index(?MODULE:k_hash(Pid, K), ?MODULE:k_hash(com:my_address(), K)),
+    case ets:lookup(RoutingTable, BranchId) of
+        [{_, NodeList}] ->
+            lists:member(Pid, NodeList);
+        _ ->
+            false
+    end.
 
 % Debugging function to print the routing table of the node.
 print_routing_table(RoutingTable, MyHash) ->

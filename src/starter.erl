@@ -2,19 +2,55 @@
 % Module: starter
 % Author(s): Nunzio D'Amore, Francesco Rossi
 % Date: 2024-12-20
-% Description: This module starts the kademlia network simulation.
+% Description: This module starts the Kademlia network simulation.
 % -----------------------------------------------------------------------------
 
 - module(starter).
 
-- export([start/0, registerShell/0, start_kademlia_network/4, test_dying_process/0, pick_random_pid/1,test_join_mean_time/0]).
-- export([wait_for_network_to_converge/1, wait_for_progress/1, destroy/0, test_lookup_meantime/0,wait_for_lookups/1, test_republisher/0]).
+- export([start/0, start_test_environment/0, registerShell/0, start_kademlia_network/4, test_dying_process/0, pick_random_pid/1, test_join_mean_time/0]).
+- export([wait_for_network_to_converge/1, wait_for_progress/1, destroy/0, test_lookup_meantime/0, wait_for_lookups/1, test_republisher/0]).
 
-% This function is used to start the enviroment
+% This function is used to start the simulation
+% It prints the welcome message and the list of tests
+% that can be run.
+start() ->
+    utils:print("+---------------------------------------+~n"),
+    utils:print("|        KADEMLIA NETWORK IN ERLANG     |~n"),
+    utils:print("+---------------------------------------+~n"),
+    utils:print("|        Authors:                       |~n"),
+    utils:print("|        Nunzio D'Amore                 |~n"),
+    utils:print("|        Francesco Rossi                |~n"),
+    utils:print("+---------------------------------------+~n"),
+    utils:print("~nChoose between the following tests:~n"),
+    utils:print("1. Test dying process~n"),
+    utils:print("2. Test join mean time~n"),
+    utils:print("3. Test lookup mean time~n"),
+    utils:print("4. Test republisher~n"),
+    utils:print("5. Exit~n"),
+    choose_test().
+
+% This function is used to choose the test to run
+% based on the user input.
+% It is a recursive function that asks the user to
+% choose a test until a valid choice is made.
+choose_test() ->
+    Choice = io:get_line("Please enter the number of the test you want to run: "),
+    utils:print("~n"),
+    case string:trim(Choice) of
+        "1" -> test_dying_process();
+        "2" -> test_join_mean_time();
+        "3" -> test_lookup_meantime();
+        "4" -> test_republisher();
+        "5" -> ok;
+        _ -> utils:print("Invalid choice~p~n", [Choice]),
+            choose_test()
+    end.
+
+% This function is used to start the environment
 % before starting the simulation
 % It starts the analytics_collector and registers
 % the shell pid
-start() ->
+start_test_environment() ->
     analytics_collector:start(),
     ?MODULE:registerShell()
 .
@@ -25,32 +61,31 @@ start() ->
 % receiving a command from the shell
 registerShell() ->
     ShellPid = whereis(shellPid),
-    if(ShellPid == undefined) ->
+    if (ShellPid == undefined) ->
         register(shellPid, self());
-    true-> ok
+    true -> ok
     end.
 
-% This function starts a kademlia network with specified parameters:
+% This function starts a Kademlia network with specified parameters:
 %   - Bootstraps: number of bootstrap nodes in the network
 %   - Nodes: number of normal nodes in the network
 %   - K: number of bits of the hash ids
 %   - T: milliseconds before republishing
-start_kademlia_network(Bootstraps, Nodes, K,T) ->
-    utils:print("Starting a Kademlia network with ~p bootstrap and ~p nodes~n", [Bootstraps,Nodes]),
-    utils:print("~p bit for the hash and ~p millis for republishig~n~n",[K,T]),
+start_kademlia_network(Bootstraps, Nodes, K, T) ->
+    utils:print("Starting a Kademlia network with ~p bootstrap and ~p nodes~n", [Bootstraps, Nodes]),
+    utils:print("~p bit for the hash and ~p millis for republishing~n~n", [K, T]),
     lists:foreach(
         fun(_) ->
             node:start(K, T, true)
         end,
-        lists:seq(1,Bootstraps)
+        lists:seq(1, Bootstraps)
     ),
     lists:foreach(
         fun(_) ->
             node:start(K, T, false)
         end,
-        lists:seq(1,Nodes)
+        lists:seq(1, Nodes)
     ).
-
 
 % -------------------------------------------------
 % TESTS FUNCTION
@@ -61,12 +96,13 @@ start_kademlia_network(Bootstraps, Nodes, K,T) ->
 % as soon as other processes realize the node is not
 % responding it is removed from the routing table
 test_dying_process() ->
-    start(),
+    start_test_environment(),
     BootstrapNodes = 1,
     Nodes = 5,
     K = 1,
     T = 4000,
 
+    print_welcome_test_message("Test dying process"),
     analytics_collector:listen_for(finished_join_procedure),
 
     ?MODULE:start_kademlia_network(BootstrapNodes, Nodes, K, T),
@@ -77,17 +113,17 @@ test_dying_process() ->
     TotalNodes = Nodes + BootstrapNodes,
     ?MODULE:wait_for_network_to_converge(TotalNodes),
     
-    utils:print("Requiring routing table to the bootstrapnode[~p]...~n",[BootstrapNode]),
+    utils:print("~nRequiring routing table to the bootstrapnode[~p]...~n",[BootstrapNode]),
     {ok, RoutingTable} = node:get_routing_table(BootstrapNode),
 
     utils:print("Current routing table of the bootstrap node [~p] : ~n~p~n",[BootstrapNode,RoutingTable]),
 
     % Pick a random pid from the routing table
     RandomPid = ?MODULE:pick_random_pid(RoutingTable),
-    utils:print("Killing a random process in the network [~p]~n",[RandomPid]),
+    utils:print("~nKilling a random process in the network [~p]~n",[RandomPid]),
     node:kill(RandomPid),
 
-    utils:print("Asking bootstrap to store value so it tryes to contact [~p]~n",[RandomPid]),
+    utils:print("~nAsking bootstrap to store value so it tries to contact [~p]~n",[RandomPid]),
     node:distribute(BootstrapNode,"foo", 0),
     timer:sleep(2000),
     {ok, NewRoutingTable} = node:get_routing_table(BootstrapNode),
@@ -98,12 +134,13 @@ test_dying_process() ->
 % the nodes join mean time during and after network
 % convergence
 test_join_mean_time() ->
-    start(),
+    start_test_environment(),
     BootstrapNodes = 10,
     Nodes = 8000,
     K = 5,
     T = 4000,
 
+    print_welcome_test_message("Test join mean time"),
     analytics_collector:listen_for(finished_join_procedure),
     StartMillis = erlang:monotonic_time(millisecond),
     ?MODULE:start_kademlia_network(BootstrapNodes,Nodes,K,T),
@@ -137,13 +174,13 @@ test_join_mean_time() ->
 .
 
 test_lookup_meantime() ->
-    start(),
+    start_test_environment(),
     BootstrapNodes = 10,
     Nodes = 8000,
     K = 5,
     T = 3000000,
 
-    utils:print("TEST: Lookup mean time~n~n"),
+    print_welcome_test_message("Test lookup mean time"),
     analytics_collector:listen_for(finished_join_procedure),
     analytics_collector:listen_for(finished_lookup),
 
@@ -191,17 +228,17 @@ test_lookup_meantime() ->
     utils:print("~nExecuting ~p lookups for 'foo'~n",[Lookups]),
     wait_for_lookups(Lookups),
     LookupMeanTime2 = analytics_collector:lookup_mean_time(),
-    utils:print("~nMean time for lookup aftert killing ~p nodes near 'foo': ~pms~n",[NodesToKill, LookupMeanTime2])
+    utils:print("~nMean time for lookup after killing ~p nodes near 'foo': ~pms~n",[NodesToKill, LookupMeanTime2])
 .
 
 test_republisher() ->
-    start(),
+    start_test_environment(),
     BootstrapNodes = 10,
     Nodes = 5000,
     K = 5,
     T = 5000,
 
-    utils:print("TEST: republisher~n~n"),
+    print_welcome_test_message("Test republisher"),
     analytics_collector:listen_for(finished_join_procedure),
 
     ?MODULE:start_kademlia_network(BootstrapNodes,Nodes,K,T),
@@ -263,6 +300,28 @@ test_republisher() ->
 % TEST TOOLS
 % --------------------------------------
 %
+center(String, Width) ->
+    Padding = Width - length(String),
+    LeftPadding = Padding div 2,
+    RightPadding = Padding - LeftPadding,
+    LeftSpaces = lists:duplicate(LeftPadding, $ ),
+    RightSpaces = lists:duplicate(RightPadding, $ ),
+    lists:concat([LeftSpaces, String, RightSpaces]).
+
+print_welcome_test_message(TestName) ->
+    MinMessageLength = 40,
+    MessageLength = length(TestName) ,
+    if MessageLength > MinMessageLength ->
+        RealMessageLength = MessageLength;
+    true ->
+        RealMessageLength = MinMessageLength
+    end,
+    Message = center(TestName, RealMessageLength),
+
+    utils:print("+" ++ lists:duplicate(RealMessageLength, $-) ++ "+~n"),
+    utils:print("|~s|~n",[Message]),
+    utils:print("+" ++ lists:duplicate(RealMessageLength, $-) ++ "+~n").
+
 % This function selects a random pid from the routing table.
 pick_random_pid(RoutingTable) ->
     {_,NodeList} = lists:nth(rand:uniform(length(RoutingTable)), RoutingTable),
@@ -294,7 +353,7 @@ wait_for_lookups(Lookups)->
                     utils:print("Failed to get lookup event with node ~p~n",[RandomBootstrap]),
                     1
                 end;
-            false -> F(F) % Recoursive call to the function to pick a new bootstrap
+            false -> F(F) % Recursive call to the function to pick a new bootstrap
         end
     end,
 
@@ -317,12 +376,10 @@ wait_for_network_to_converge(Started) ->
             if length(Unfinished) > 0 ->
                 receive
                     {event_notification, finished_join_procedure, _} ->
-
                         Finished = analytics_collector:get_finished_join_nodes(),
                         Progress = length(Finished) / Started,
                         Progress
                 after 8000 ->
-                    
                     1
                 end;
             true -> 1
@@ -339,17 +396,17 @@ wait_for_progress(Progress) ->
     wait_for_progress(Progress, true).
 wait_for_progress(Progress, PrintBar) -> 
     CurrentProgress = Progress(),
-    utils:print_progress(CurrentProgress,PrintBar),
+    utils:print_progress(CurrentProgress, PrintBar),
     if CurrentProgress == 1 ->
         ok;
     true ->
-        wait_for_progress(Progress,PrintBar)
+        wait_for_progress(Progress, PrintBar)
     end.
 
 destroy() ->
     AllProcesses = analytics_collector:get_node_list(),
     lists:foreach(
-        fun(Pid)->
+        fun(Pid) ->
             exit(Pid, kill)
         end,
         AllProcesses

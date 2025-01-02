@@ -146,9 +146,10 @@ join_procedure([{_,NodePid} | T], RoutingTable, K, K_Bucket_Size, ContactedNodes
         Tab2List = ets:tab2list(RoutingTable),
         FilledBranches = lists:foldl(
             fun({BranchID, List}, Acc) ->
-                case List of
-                    [] -> Acc;
-                    _ -> [BranchID | Acc]
+                Size = length(List),
+                if Size > 1 ->
+                    [BranchID | Acc];
+                true -> Acc
                 end
             end,
             [],
@@ -173,7 +174,15 @@ join_procedure([{_,NodePid} | T], RoutingTable, K, K_Bucket_Size, ContactedNodes
                     % saving all the new nodes
                     lists:foreach(
                         fun({_, NewNode}) ->
-                            node:save_node(NewNode,RoutingTable,K,K_Bucket_Size)
+                            PidInRoutingTable = utils:pid_in_routing_table(RoutingTable, NewNode, K),
+                            if not  PidInRoutingTable->
+                                case node:ping(NewNode) of
+                                    {pong, ok} ->
+                                        node:save_node(NewNode,RoutingTable,K,K_Bucket_Size);
+                                    _ -> ok
+                                end;
+                            true -> ok
+                            end
                         end,
                         Branches
                     ),

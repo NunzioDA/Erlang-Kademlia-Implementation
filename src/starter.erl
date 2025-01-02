@@ -92,7 +92,6 @@ destroy() ->
         end,
         AllProcesses
     ),
-    timer:sleep(2000),
     analytics_collector:kill()
     % exit(self(),kill)
 .
@@ -110,10 +109,11 @@ test_dying_process() ->
     BootstrapNodes = 1,
     Nodes = 5,
     K = 1,
-    T = 4000,
+    T = 40000,
 
     print_headline(["Test dying process"]),
     analytics_collector:listen_for(finished_join_procedure),
+    analytics_collector:listen_for(stored_value),
 
     ?MODULE:start_kademlia_network(BootstrapNodes, Nodes, K, T),
     [BootstrapNode|_] = analytics_collector:get_bootstrap_list(),
@@ -135,7 +135,9 @@ test_dying_process() ->
 
     utils:print("~nAsking bootstrap to store value so it tries to contact [~p]~n",[RandomPid]),
     node:distribute(BootstrapNode,"foo", 0),
-    timer:sleep(2000),
+    
+    wait_for_stores(Nodes - 1),
+
     {ok, NewRoutingTable} = node:get_routing_table(BootstrapNode),
     utils:print("New routing table of the bootstrap node [~p] : ~n~p~n",[BootstrapNode,NewRoutingTable])
 .
@@ -193,6 +195,7 @@ test_lookup_meantime() ->
     print_headline(["Test lookup mean time"]),
     analytics_collector:listen_for(finished_join_procedure),
     analytics_collector:listen_for(finished_lookup),
+    analytics_collector:listen_for(stored_value),
 
     ?MODULE:start_kademlia_network(BootstrapNodes,Nodes,K,T),
 
@@ -204,10 +207,10 @@ test_lookup_meantime() ->
     [BootstrapNode | _] = analytics_collector:get_bootstrap_list(),
     node:distribute(BootstrapNode,"foo", 0),
     % Waiting to make sure the value is delivered
-    timer:sleep(2000),
+    wait_for_stores(20),
 
     Lookups = 5,
-    utils:print("~nExecuting ~p lookups for 'foo'~n",[Lookups]),
+    utils:print("~n~nExecuting ~p lookups for 'foo'~n",[Lookups]),
     wait_for_lookups(Lookups),
     
     LookupMeanTime = analytics_collector:lookup_mean_time(),
@@ -250,17 +253,18 @@ test_republisher() ->
 
     print_headline(["Test republisher"]),
     analytics_collector:listen_for(finished_join_procedure),
+    analytics_collector:listen_for(stored_value),
 
     ?MODULE:start_kademlia_network(BootstrapNodes,Nodes,K,T),
-    ?MODULE:wait_for_network_to_converge(Nodes),
+    TotalNodes = Nodes + BootstrapNodes,
+    ?MODULE:wait_for_network_to_converge(TotalNodes),
 
     [BootstrapNode | _] = analytics_collector:get_bootstrap_list(),
     utils:print("~nSaving 'foo' => 0 in the network with node ~p...~n", [BootstrapNode]),
     node:distribute(BootstrapNode,"foo", 0),
 
 
-    timer:sleep(2000),
-    analytics_collector:listen_for(stored_value),
+    wait_for_stores(20),
     utils:print("~n~nGetting the nodes that stored 'foo'...~n"),
     NearestNodes = analytics_collector:get_nodes_that_stored("foo"),
 
@@ -288,17 +292,7 @@ test_republisher() ->
 
     analytics_collector:flush_nodes_that_stored(),
     utils:print("~nWaiting for new nodes to receive the value~n"),
-    wait_for_progress(
-        fun() ->
-            receive 
-                {event_notification, stored_value, _} ->
-                    NewNodesStoringFoo = analytics_collector:get_nodes_that_stored("foo"),
-                    length(NewNodesStoringFoo) / 20
-            after 10000 ->
-                1
-            end
-        end
-    ),
+    wait_for_stores(20),
 
     NewNearestNodes = analytics_collector:get_nodes_that_stored("foo"),
 
@@ -362,6 +356,23 @@ pick_random_pid(RoutingTable) ->
             RandomPid
     end.
 
+wait_for_stores(Stores) ->
+    utils:print_progress(0, false),
+    wait_for_progress(
+        fun() ->
+            receive
+                {event_notification, stored_value, _} ->
+                    Finished = analytics_collector:get_nodes_that_stored("foo"),
+                    Progress = length(Finished) / Stores,
+                    Progress
+            after 8000 ->
+                1
+            end
+        end
+    ).
+
+% This function is used to wait for a number of lookups.
+% It waits for the event system to notify the end of the lookups-
 wait_for_lookups(Lookups)->
     utils:print_progress(0, false),
 

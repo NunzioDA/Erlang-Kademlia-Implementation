@@ -151,7 +151,7 @@ test_dying_process() ->
     wait_for_stores(Nodes - 1),
 
     {ok, NewRoutingTable} = node:get_routing_table(BootstrapNode),
-    utils:print("New routing table of the bootstrap node [~p] : ~n~p~n",[BootstrapNode,NewRoutingTable])
+    utils:print("~n~nNew routing table of the bootstrap node [~p] : ~n~p~n",[BootstrapNode,NewRoutingTable])
 .
 
 % This test shows the network convergence time and 

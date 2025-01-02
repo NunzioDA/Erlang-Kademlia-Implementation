@@ -131,6 +131,26 @@ empty_branches(RoutingTable, K) ->
 
     AnyEmpty.
 
+% branches_with_less_than(RoutingTable, K, MinLen) ->
+
+    % AnyEmpty = lists:any(
+    %     fun(Element) ->
+    %         case ets:lookup(RoutingTable,Element) of
+    %             [{_,Nodes}] -> 
+    %                 Length = length(Nodes),
+    %                 if Length =< MinLen -> true;
+    %                 true -> false
+    %                 end;
+    %             [] -> true;
+    %             _ ->
+    %                 false
+    %         end
+    %     end,
+    %     lists:seq(1,K)    
+    % ),
+
+    % AnyEmpty.
+
 pid_in_routing_table(RoutingTable, Pid, K) ->
     BranchId = ?MODULE:get_subtree_index(?MODULE:k_hash(Pid, K), com:my_hash_id(K)),
     

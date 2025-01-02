@@ -14,13 +14,8 @@
 % It prints the welcome message and the list of tests
 % that can be run.
 start() ->
-    utils:print("+---------------------------------------+~n"),
-    utils:print("|        KADEMLIA NETWORK IN ERLANG     |~n"),
-    utils:print("+---------------------------------------+~n"),
-    utils:print("|        Authors:                       |~n"),
-    utils:print("|        Nunzio D'Amore                 |~n"),
-    utils:print("|        Francesco Rossi                |~n"),
-    utils:print("+---------------------------------------+~n"),
+    RealMessageLength = print_headline(["KADEMLIA NETWORK SIMULATION"]),
+    print_headline(["Authors:","Nunzio D'Amore","Francesco Rossi"], RealMessageLength),
     utils:print("~nChoose between the following tests:~n"),
     utils:print("1. Test dying process~n"),
     utils:print("2. Test join mean time~n"),
@@ -87,6 +82,21 @@ start_kademlia_network(Bootstraps, Nodes, K, T) ->
         lists:seq(1, Nodes)
     ).
 
+% This function is used to destroy the simulation
+% It kills all the processes and the analytics_collector
+destroy() ->
+    AllProcesses = analytics_collector:get_node_list(),
+    lists:foreach(
+        fun(Pid) ->
+            exit(Pid, kill)
+        end,
+        AllProcesses
+    ),
+    timer:sleep(2000),
+    analytics_collector:kill()
+    % exit(self(),kill)
+.
+
 % -------------------------------------------------
 % TESTS FUNCTION
 % ------------------------------------------------- 
@@ -102,7 +112,7 @@ test_dying_process() ->
     K = 1,
     T = 4000,
 
-    print_welcome_test_message("Test dying process"),
+    print_headline(["Test dying process"]),
     analytics_collector:listen_for(finished_join_procedure),
 
     ?MODULE:start_kademlia_network(BootstrapNodes, Nodes, K, T),
@@ -140,7 +150,7 @@ test_join_mean_time() ->
     K = 5,
     T = 4000,
 
-    print_welcome_test_message("Test join mean time"),
+    print_headline(["Test join mean time"]),
     analytics_collector:listen_for(finished_join_procedure),
     StartMillis = erlang:monotonic_time(millisecond),
     ?MODULE:start_kademlia_network(BootstrapNodes,Nodes,K,T),
@@ -180,7 +190,7 @@ test_lookup_meantime() ->
     K = 5,
     T = 3000000,
 
-    print_welcome_test_message("Test lookup mean time"),
+    print_headline(["Test lookup mean time"]),
     analytics_collector:listen_for(finished_join_procedure),
     analytics_collector:listen_for(finished_lookup),
 
@@ -238,7 +248,7 @@ test_republisher() ->
     K = 5,
     T = 5000,
 
-    print_welcome_test_message("Test republisher"),
+    print_headline(["Test republisher"]),
     analytics_collector:listen_for(finished_join_procedure),
 
     ?MODULE:start_kademlia_network(BootstrapNodes,Nodes,K,T),
@@ -308,19 +318,39 @@ center(String, Width) ->
     RightSpaces = lists:duplicate(RightPadding, $ ),
     lists:concat([LeftSpaces, String, RightSpaces]).
 
-print_welcome_test_message(TestName) ->
+% This function is used to print 
+% the title.
+% Content is a list of strings
+print_headline(Content)->
+    LongerString = lists:foldl(
+        fun(String, Acc) ->
+            if length(String) > Acc -> length(String);
+            true -> Acc
+            end
+        end,
+        0,
+        Content
+    ),
     MinMessageLength = 40,
-    MessageLength = length(TestName) ,
-    if MessageLength > MinMessageLength ->
-        RealMessageLength = MessageLength;
+
+    if LongerString > MinMessageLength ->
+        RealMessageLength = LongerString;
     true ->
         RealMessageLength = MinMessageLength
     end,
-    Message = center(TestName, RealMessageLength),
+    print_headline(Content, RealMessageLength).
+print_headline(Content, RealMessageLength) ->    
+    utils:print("+" ++ lists:duplicate(RealMessageLength, $-) ++ "+~n"),
+
+    lists:foreach(
+        fun(String) ->
+            utils:print("|" ++ center(String, RealMessageLength) ++ "|~n")
+        end,
+        Content
+    ),
 
     utils:print("+" ++ lists:duplicate(RealMessageLength, $-) ++ "+~n"),
-    utils:print("|~s|~n",[Message]),
-    utils:print("+" ++ lists:duplicate(RealMessageLength, $-) ++ "+~n").
+    RealMessageLength.
 
 % This function selects a random pid from the routing table.
 pick_random_pid(RoutingTable) ->
@@ -402,16 +432,3 @@ wait_for_progress(Progress, PrintBar) ->
     true ->
         wait_for_progress(Progress, PrintBar)
     end.
-
-destroy() ->
-    AllProcesses = analytics_collector:get_node_list(),
-    lists:foreach(
-        fun(Pid) ->
-            exit(Pid, kill)
-        end,
-        AllProcesses
-    ),
-    timer:sleep(2000),
-    analytics_collector:kill()
-    % exit(self(),kill)
-.

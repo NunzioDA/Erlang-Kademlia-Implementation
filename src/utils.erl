@@ -219,7 +219,23 @@ print_progress(ProgressRatio, PrintBar) ->
         MaxLength = 30,
         CompletedLength = round(ProgressRatio * MaxLength),
         IncompleteLength = MaxLength - CompletedLength,
-        Bar = "[" ++ lists:duplicate(CompletedLength, $=) 
+        % If the progress is 100% the arrow is not printed
+        if(IncompleteLength == 0) ->
+            EqualCharLength = CompletedLength,
+            Arrow = "";
+        true ->
+            % If the progress is 0% the arrow is not printed
+            % only if the progress is greater than 0
+            if CompletedLength > 0 ->
+                EqualCharLength = CompletedLength - 1,
+                Arrow = ">";
+            true ->
+                EqualCharLength = 0,
+                Arrow = ""
+            end
+        end,
+        Bar = "[" ++ lists:duplicate(EqualCharLength, $=)
+                ++ Arrow
                 ++ lists:duplicate(IncompleteLength, $\s) 
                 ++ "] ";
     true ->

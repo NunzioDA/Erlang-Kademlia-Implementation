@@ -9,12 +9,12 @@
 -module(analytics_collector).
 -behaviour(gen_server).
 
--export([init/1, handle_call/3, handle_cast/2, listen_for/1, notify_listeners/3, kill/0, enroll_node/0, stored_value/1, get_nodes_that_stored/1]).
--export([start/0, enroll_bootstrap/0, get_bootstrap_list/0, get_node_list/0, started_join_procedure/0, get_started_join_nodes/0, flush_join_events/0]).
--export([finished_join_procedure/1, join_procedure_mean_time/0, get_unfinished_join_nodes/0, get_finished_join_nodes/0, flush_lookups_events/0]).
--export([start_link/0, add/2, get_events/1, make_request/2, calculate_mean_time/2, register_new_event/4, empty_event_list/1, flush_nodes_that_stored/0]).
--export([started_time_based_event/1, started_lookup/0, finished_time_based_event/2, finished_lookup/1, lookup_mean_time/0, get_finished_lookup/0]).
-
+-export([init/1, handle_call/3, handle_cast/2, listen_for/1, notify_listeners/3, kill/0, enroll_node/0, stored_value/1]).
+-export([start/0, enroll_bootstrap/0, get_node_list/0, started_join_procedure/0, get_started_join_nodes/0, flush_join_events/0]).
+-export([finished_join_procedure/1, get_unfinished_join_nodes/0, get_finished_join_nodes/0, flush_lookups_events/0, flush_nodes_that_stored/0]).
+-export([start_link/0, add/2, get_events/1, make_request/2, calculate_mean_time/2, register_new_event/4, empty_event_list/1]).
+-export([started_time_based_event/1, started_lookup/0, finished_time_based_event/2, finished_lookup/1, lookup_mean_time/0]).
+-export([get_started_lookup/0, get_bootstrap_list/0, join_procedure_mean_time/0, get_nodes_that_stored/1,get_finished_lookup/0]).
 % --------------------------------
 % Starting methods
 % --------------------------------
@@ -122,9 +122,13 @@ get_unfinished_join_nodes()->
 	FilteredStartedTimes = [Pid || {Pid, _, _} <- StartedTimes, not lists:keymember(Pid, 1, FinishedTimes)],
 	FilteredStartedTimes.
 
+% This function returns all the processes that have
+% started the join procedure
 get_started_join_nodes() ->
 	?MODULE:get_events(started_join_procedure).
 
+% This function returns all the processes that have
+% finished the join procedure
 get_finished_join_nodes() ->
 	?MODULE:get_events(finished_join_procedure).
 
@@ -133,15 +137,23 @@ flush_join_events() ->
 	empty_event_list(started_join_procedure),
 	empty_event_list(finished_join_procedure).
 
+% This function returns all the processes that have
+% started the lookup procedure
+get_started_lookup() ->
+	?MODULE:get_events(started_lookup).
 
-
+% This function returns all the processes that have
+% finished the lookup procedure
 get_finished_lookup() ->
 	?MODULE:get_events(finished_lookup).
 
+% This function flushes the lookup procedure results
 flush_lookups_events() ->
 	empty_event_list(started_lookup),
 	empty_event_list(finished_lookup).
 
+% This function returns all the processes that have
+% enrolled as bootstrap nodes
 get_bootstrap_list() ->
 	lists:foldl(
 		fun({Pid,_,_}, Acc) ->
@@ -151,6 +163,8 @@ get_bootstrap_list() ->
 		?MODULE:get_events(bootstrap)
 	).
 
+% This function returns all the processes that have
+% enrolled as nodes
 get_node_list() ->
 		lists:foldl(
 		fun({Pid,_,_}, Acc) ->
@@ -160,13 +174,15 @@ get_node_list() ->
 		?MODULE:get_events(node)
 	).
 
+% This function returns all the processes that have
+% stored the value relative to a specific key
 get_nodes_that_stored(Key) ->
 	StoreEvents = ?MODULE:get_events(stored_value),
 	KeyStoreEvents = [Pid || {Pid,{_,SavedKey}, _} <- StoreEvents, SavedKey == Key],
 	NoDuplicate = utils:remove_duplicates(KeyStoreEvents),
-	NoDuplicate
-.
+	NoDuplicate.
 
+% This function flushes the stored_value events
 flush_nodes_that_stored() ->
 	empty_event_list(stored_value).
 
@@ -325,7 +341,8 @@ register_new_event(Pid, EventType, Event, ListenersMap) ->
 	?MODULE:notify_listeners(EventType, NewRecord, ListenersMap)
 .
 
-
+% This function is used to kill the analytics collector
+% if it is running.
 kill() ->
 	case whereis(analytics_collector) of
 		undefined -> utils:print("There is not any instance of Analytic Collector running");

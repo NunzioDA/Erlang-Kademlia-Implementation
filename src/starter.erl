@@ -94,30 +94,6 @@ test_dying_process() ->
     utils:print("New routing table of the bootstrap node [~p] : ~n~p~n",[BootstrapNode,NewRoutingTable])
 .
 
-% get_join_values(X, Y) ->
-%     analytics_collector:start(),
-%     analytics_collector:listen_for(finished_join_procedure),
-%     % BootstrapNodes = 10,
-%     % Nodes = 2000,
-%     K = 5,
-%     T = 4000,
-    
-%     StartMillis = erlang:monotonic_time(millisecond),
-%     ?MODULE:start_kademlia_network(X,Y,K,T),
-
-%     utils:print("Waiting for the network to converge~n"),
-%     ?MODULE:wait_for_network_to_converge(),
-
-%     EndMillis = erlang:monotonic_time(millisecond),
-%     Result = EndMillis - StartMillis,
-%     utils:print("~nTotal time for the network with ~p nodes to converge: ~pms~n",[Y, Result]),
-%     if(Y < 8000) ->
-%         destroy(),
-%         timer:sleep(2000),        
-%         [Result | get_join_values(X*2, Y*2)];
-%     true -> [Result]
-%     end
-% .
 % This test shows the network convergence time and 
 % the nodes join mean time during and after network
 % convergence
@@ -204,11 +180,7 @@ test_lookup_meantime() ->
     lists:foreach(
         fun(I)->
             NearNode = lists:nth(I,NearestNodes),
-            % Ping1=node:ping(NearNode),
-            % utils:print("~p~n",[Ping1]),
             node:kill(NearNode)
-            % Ping2=node:ping(NearNode),
-            % utils:print("~p~n",[Ping2])
         end,  
         lists:seq(1, NodesToKill)
     ),
@@ -303,22 +275,31 @@ pick_random_pid(RoutingTable) ->
 
 wait_for_lookups(Lookups)->
     utils:print_progress(0, false),
+
+    % Creating the function to compute the progress
+    Fun = fun(F) ->
+        RandomBootstrap = join_thread:pick_bootstrap(),
+        
+        % checking if bootstrap is alive
+        case erlang:is_process_alive(RandomBootstrap) of
+            true -> % If it is alive, we can start the lookup
+                node:lookup(RandomBootstrap,"foo", true),
+                receive
+                    {event_notification, finished_lookup, _} ->
+                        Finished = analytics_collector:get_finished_lookup(),
+                        LenFinished = length(Finished),
+                        Progress = LenFinished / Lookups,
+                        Progress
+                after 20000 ->
+                    utils:print("Failed to get lookup event with node ~p~n",[RandomBootstrap]),
+                    1
+                end;
+            false -> F(F) % Recoursive call to the function to pick a new bootstrap
+        end
+    end,
+
     wait_for_progress(
-        fun() ->
-            RandomBootstrap = join_thread:pick_bootstrap(),
-            
-            % Verbose = LenFinished == Lookups,
-            node:lookup(RandomBootstrap,"foo", true),
-            receive
-                {event_notification, finished_lookup, _} ->
-                    Finished = analytics_collector:get_finished_lookup(),
-                    LenFinished = length(Finished),
-                    Progress = LenFinished / Lookups,
-                    Progress
-            after 20000 ->
-                1
-            end
-        end,
+        fun() -> Fun(Fun) end,
         false
     ).
 

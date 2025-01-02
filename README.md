@@ -30,4 +30,4 @@
 
 ## .gitignore
 
-The `.gitignore` file is configured to ignore all `.beam` files.
+The `.gitignore` file is configured to ignore all `.beam` and `.dump` files.

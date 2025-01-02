@@ -22,12 +22,21 @@ start(RoutingTable, K, T, BucketSize) ->
     Pid
 .
 
+% Send new pair to the republisher
+% that will take care of publishing 
+% and republishing it.
+% The pair is sent to the republisher
+% using the message new_pair
 add_pair(Key, Value) ->
     case get(republisher_pid) of
         undefined -> utils:print("Start a republisher before adding pairs");
         Pid -> Pid ! {new_pair, Key, Value}
     end.
 
+% Check for new pairs to add to the value table
+% and distribute them to the network.
+% New pairs are received from the add_pair function
+% using the receive statement with new_pair message
 check_for_new_pairs(ValuesTable, RoutingTable, K, BucketSize) ->
     receive
         {new_pair, Key, Value} ->

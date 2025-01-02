@@ -32,14 +32,26 @@ choose_test() ->
     Choice = io:get_line("Please enter the number of the test you want to run: "),
     utils:print("~n"),
     case string:trim(Choice) of
-        "1" -> test_dying_process();
-        "2" -> test_join_mean_time();
-        "3" -> test_lookup_meantime();
-        "4" -> test_republisher();
+        "1" -> start_test(fun test_dying_process/0);
+        "2" -> start_test(fun test_join_mean_time/0);
+        "3" -> start_test(fun test_lookup_meantime/0);
+        "4" -> start_test(fun test_republisher/0);
         "5" -> ok;
         _ -> utils:print("Invalid choice~p~n", [Choice]),
             choose_test()
     end.
+start_test(TestFunction) ->
+    % Check if the analytics_collector is already started
+    case whereis(analytics_collector) of
+        undefined -> ok;
+        _ -> 
+            % If it is already started, we need to kill it
+            % to avoid conflicts with the new test
+            utils:print("Cleaning up the environment before starting the test...~n~n"),
+            destroy(),
+            timer:sleep(1000) % Wait for the processes to die
+    end,
+    TestFunction().
 
 % This function is used to start the environment
 % before starting the simulation

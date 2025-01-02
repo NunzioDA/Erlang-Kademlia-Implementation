@@ -30,10 +30,14 @@ start(Function) ->
     Pid
 .
 
+% This method kills a thread
+% where Thread is the Pid of 
+% the thread to kill
 kill(Thread) ->
     unlink(Thread),
     exit(Thread, kill).
 
+% This method kills all the threads started from the parent process
 kill_all()->
     Threads = ?MODULE:get_threads(),
     lists:foreach(

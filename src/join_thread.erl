@@ -64,32 +64,23 @@ check_for_empty_branches(RoutingTable, K, BucketSize) ->
 % from those signaled to the analytics_collector
 pick_bootstrap() ->
     BootstrapList = analytics_collector:get_bootstrap_list(),
-    BootstrapListFiltered =lists:filter(
-        fun(Pid) ->
-            Pid /= com:my_address()
-        end,
-        BootstrapList
-    ),
-    Length = length(BootstrapListFiltered),
 
-    case length(BootstrapListFiltered) of
+    Length = length(BootstrapList),
+
+    case length(BootstrapList) of
         0 -> -1;
         Length ->                    
             Index = rand:uniform(Length),
-            Bootstrap = lists:nth(Index, BootstrapListFiltered),
+            Bootstrap = lists:nth(Index, BootstrapList),
             Bootstrap
     end.
 
 nearest_bootstrap(K) ->
     BootstrapList = analytics_collector:get_bootstrap_list(),
-    % Filtering out the node itself and 
-    % converting the list to a list of {hash, pid}
+    %converting the list to a list of {hash, pid}
     BootstrapListFiltered =lists:foldl(
         fun(Pid, Acc) ->
-            case Pid =:= com:my_address() of 
-                true -> Acc;
-                false -> [{utils:k_hash(Pid, K), Pid} | Acc]
-            end
+            [{utils:k_hash(Pid, K), Pid} | Acc]
         end,
         [],
         BootstrapList

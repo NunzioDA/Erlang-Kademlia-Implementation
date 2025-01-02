@@ -9,10 +9,10 @@
 -module(analytics_collector).
 -behaviour(gen_server).
 
--export([init/1, handle_call/3, handle_cast/2, listen_for/1, notify_listeners/2, kill/0, enroll_node/0, stored_value/1, get_nodes_that_stored/1]).
+-export([init/1, handle_call/3, handle_cast/2, listen_for/1, notify_listeners/3, kill/0, enroll_node/0, stored_value/1, get_nodes_that_stored/1]).
 -export([start/0, enroll_bootstrap/0, get_bootstrap_list/0, get_node_list/0, started_join_procedure/0, get_started_join_nodes/0, flush_join_events/0]).
 -export([finished_join_procedure/1, join_procedure_mean_time/0, get_unfinished_join_nodes/0, get_finished_join_nodes/0, flush_lookups_events/0]).
--export([start_link/0, add/2, get_events/1, make_request/2, calculate_mean_time/2, register_new_event/3, empty_event_list/1, flush_nodes_that_stored/0]).
+-export([start_link/0, add/2, get_events/1, make_request/2, calculate_mean_time/2, register_new_event/4, empty_event_list/1, flush_nodes_that_stored/0]).
 -export([started_time_based_event/1, started_lookup/0, finished_time_based_event/2, finished_lookup/1, lookup_mean_time/0, get_finished_lookup/0]).
 
 % --------------------------------
@@ -240,8 +240,8 @@ get_events(EventType) ->
 	end.
 
 % This function is used to notify enrolled event listeners
-notify_listeners(EventType, Event) ->
-	case get(listeners) of
+notify_listeners(EventType, Event, ListenersMap) ->
+	case ListenersMap of
 		undefined -> 
 			ok;
 		ListenersMap ->
@@ -276,22 +276,24 @@ make_request(Type, Request) ->
 % collect data.
 init([]) ->
 	register(analytics_collector, self()),
-	Analytics = ets:new(analytics, [set, public, named_table]),
-	{ok, Analytics}.
+	ets:new(analytics, [set, public, named_table]),
+	ListenersMap = #{},
+	{ok, ListenersMap}.
 
 handle_call(_Request, _From, State) ->
 	{reply, ok, State}.
 
 % This clause handle the registration of a generic event
 handle_cast({new_event, Pid, EventType, Event}, State) ->
-	?MODULE:register_new_event(Pid, EventType, Event),
+	ListenersMap = State,
+	?MODULE:register_new_event(Pid, EventType, Event, ListenersMap),
 	{noreply, State};
 
 % This clause handle the registration of an event listener
 handle_cast({new_listener, Pid, EventType}, State) ->
-	ListenersMap = get(listeners),
+	ListenersMap = State,
 	if(ListenersMap == undefined) ->
-		put(listeners, #{EventType=>[Pid]});
+		NewListenersMap = #{EventType=>[Pid]};
 	true ->
 		case (maps:is_key(EventType,ListenersMap)) of
 			true->
@@ -300,17 +302,16 @@ handle_cast({new_listener, Pid, EventType}, State) ->
 			false ->
 				NewEventListeners = [Pid]
 		end,
-		NewListenersMap = maps:put(EventType, NewEventListeners, ListenersMap),
-		put(listeners, NewListenersMap)
+		NewListenersMap = maps:put(EventType, NewEventListeners, ListenersMap)
 	end,
-	{noreply, State}.
+	{noreply, NewListenersMap}.
 
 empty_event_list(EventType) ->
 	ets:insert(analytics, {EventType, []}).
 
 % This function saves the event to the ets table
 % named analytics.
-register_new_event(Pid, EventType, Event) ->
+register_new_event(Pid, EventType, Event, ListenersMap) ->
 	Millis = erlang:monotonic_time(millisecond),
 	NewRecord = {Pid, Event, Millis},
 	case ets:lookup(analytics, EventType) of
@@ -321,7 +322,7 @@ register_new_event(Pid, EventType, Event) ->
 		[] ->
 			ets:insert(analytics, {EventType, [NewRecord]})
 	end,
-	?MODULE:notify_listeners(EventType, NewRecord)
+	?MODULE:notify_listeners(EventType, NewRecord, ListenersMap)
 .
 
 

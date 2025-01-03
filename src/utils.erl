@@ -8,9 +8,9 @@
 - module(utils).
 - export([k_hash/2, get_subtree_index/2, xor_distance/2, sort_node_list/2, print_progress/2]).
 - export([empty_branches/2, remove_duplicates/1, remove_contacted_nodes/2, print/1, print/2]).
-- export([to_bit_list/1, print_routing_table/2, debug_print/1, debug_print/2, do_it_if_verbose/1]).
-- export([verbose/0, set_verbose/1,most_significant_bit_index/1, most_significant_bit_index/2, pid_in_routing_table/3]).
-
+- export([to_bit_list/1, print_routing_table/1, debug_print/1, debug_print/2, do_it_if_verbose/1]).
+- export([verbose/0, set_verbose/1,most_significant_bit_index/1, most_significant_bit_index/2]).
+- export([print_centered_rectangle/1, print_centered_rectangle/2, pid_in_routing_table/3, center/2]).
 
 % This function is used to convert a bitstring into a list of bits.
 %%% Used for debugging purposes. %%%
@@ -161,21 +161,165 @@ pid_in_routing_table(RoutingTable, Pid, K) ->
             false
     end.
 
-% Debugging function to print the routing table of the node.
-print_routing_table(RoutingTable, MyHash) ->
-    ets:tab2list(RoutingTable),
-    lists:foldl(
-        fun({BranchID, NodeList}, Acc) ->
-            if BranchID < bit_size(MyHash) ->
-                <<FirstBits:BranchID/bits, _/bits>> = MyHash;
-            true ->
-                FirstBits = MyHash
-            end,
-            Acc ++ [{?MODULE:to_bit_list(FirstBits), NodeList}]
+% --------------------------------------------------------
+% Print functions
+% --------------------------------------------------------
+
+% This function is used to center a string
+% in a rectangle of a given width
+center(String, Width) ->
+    Padding = Width - length(String),
+    LeftPadding = Padding div 2,
+    RightPadding = Padding - LeftPadding,
+    LeftSpaces = lists:duplicate(LeftPadding, $ ),
+    RightSpaces = lists:duplicate(RightPadding, $ ),
+    lists:concat([LeftSpaces, String, RightSpaces]).
+
+% This function is used to print 
+% the title.
+% Content is a list of strings
+print_centered_rectangle(Content) ->
+    LongerString = lists:foldl(
+        fun(String, Acc) ->
+            if length(String) > Acc -> length(String);
+            true -> Acc
+            end
         end,
-        [],
-        ets:tab2list(RoutingTable)
-    ).
+        0,
+        Content
+    ),
+    MinMessageLength = 40,
+
+    if LongerString > MinMessageLength ->
+        RealMessageLength = LongerString;
+    true ->
+        RealMessageLength = MinMessageLength
+    end,
+    ?MODULE:print_centered_rectangle(Content, RealMessageLength).
+
+print_centered_rectangle(Content, RealMessageLength) ->    
+    utils:print("+" ++ lists:duplicate(RealMessageLength, $-) ++ "+~n"),
+
+    lists:foreach(
+        fun(String) ->
+            utils:print("|" ++ ?MODULE:center(String, RealMessageLength) ++ "|~n")
+        end,
+        Content
+    ),
+
+    utils:print("+" ++ lists:duplicate(RealMessageLength, $-) ++ "+~n"),
+    RealMessageLength.
+
+% Debugging function to print the routing table of the node.
+% The routing table has to be passed as a list of tuples
+% as the output of ets:tab2list.
+% The function prints the routing table in a formatted way.
+print_routing_table(RoutingTableToList) ->
+    RoutingTable = lists:sort(
+        fun({Key1, _}, {Key2, _}) -> 
+            Key1 < Key2
+        end,
+        RoutingTableToList
+    ),
+    % Getting the longest column and the longest element in the table
+    {CellWidth,LongerColumn} = lists:foldl(
+        fun({Key, List}, Acc) ->
+            FormattedKey = lists:flatten(io_lib:format("~p", [Key])),
+            KeyLen = length(FormattedKey),
+
+            LongerInList = lists:foldl(
+                fun(Element, Acc2) ->
+                    FormattedElement = lists:flatten(io_lib:format("~p", [Element])),
+                    ElementLen = length(FormattedElement),
+                    if ElementLen > Acc2 -> 
+                        ElementLen;
+                    true -> Acc2
+                    end
+                end,
+                0,
+                List
+            ),
+
+            if KeyLen > LongerInList -> CurrentLonger = KeyLen;
+            true -> CurrentLonger = LongerInList
+            end,
+            
+            {LastLonger, LastListLen} = Acc, 
+            if CurrentLonger > LastLonger -> 
+                CellWidth = CurrentLonger;
+            true -> 
+                CellWidth = LastLonger
+            end,
+            
+            ListLen = length(List),
+            if ListLen > LastListLen -> 
+                ReturnListLen = ListLen;
+            true ->
+                ReturnListLen = LastListLen
+            end,
+            {CellWidth, ReturnListLen}
+
+        end,
+        {0,0},
+        RoutingTable
+    ),
+
+    CellTableWidth = CellWidth + 2,
+
+    % Printing column names
+    io:format("+"),
+    lists:foreach(
+        fun({_,_}) ->
+            io:format(lists:duplicate(CellTableWidth, $-) ++ "+")
+        end,
+        RoutingTable    
+    ),
+    io:format("~n|"),
+    lists:foreach(
+        fun({Column,_}) ->
+            io:format(center(lists:flatten(io_lib:format("~p",[Column])), CellTableWidth)++"|")
+        end,
+        RoutingTable    
+    ),
+    io:format("~n+"),
+    lists:foreach(
+        fun({_,_}) ->
+            io:format(lists:duplicate(CellTableWidth, $-) ++ "+")
+        end,
+        RoutingTable    
+    ),
+    io:format("~n"),
+
+    % Printing the routing table content
+    lists:foreach(
+        fun(I) ->
+            io:format("|"),
+            lists:foreach(
+                fun({_,List}) ->
+                    if I =< length(List) ->
+                        Element = lists:nth(I, List),
+                        FormattedElement = lists:flatten(io_lib:format("~p", [Element]));
+                    true ->
+                        FormattedElement = ""
+                    end,
+                    
+                    CenteredLine = ?MODULE:center(FormattedElement, CellTableWidth),
+                    io:format("~s|", [CenteredLine])
+                end,
+                RoutingTable    
+            ),
+            io:format("~n")
+        end,
+        lists:seq(1,LongerColumn)
+    ),
+    io:format("+"),
+    lists:foreach(
+        fun({_,_}) ->
+            io:format(lists:duplicate(CellTableWidth, $-) ++ "+")
+        end,
+        RoutingTable    
+    )
+.
 
 % Used to print console messages
 print(Format)->

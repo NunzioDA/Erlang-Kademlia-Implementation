@@ -195,7 +195,7 @@ test_join_mean_time() ->
 
 
     analytics_collector:flush_join_events(),
-    utils:print("~nStarting 5 new nodes to measure join time~n"),
+    utils:print("~n~nStarting 5 new nodes to measure join time~n"),
 
     NewNodes = 5,
     lists:foreach(

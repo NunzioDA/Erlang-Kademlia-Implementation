@@ -318,7 +318,8 @@ print_routing_table(RoutingTableToList) ->
             io:format(lists:duplicate(CellTableWidth, $-) ++ "+")
         end,
         RoutingTable    
-    )
+    ),
+    io:format("~n")
 .
 
 % Used to print console messages

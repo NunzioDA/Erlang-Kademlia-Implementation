@@ -11,7 +11,7 @@
 -export([start/3, start/4, ping/1, distribute_value/5, send_request/4, lookup/3, shell_find_nearest_nodes/2]).
 -export([distribute/3, lookup/2, get_routing_table/1, talk/1, shut/1, start_server/4]).
 -export([save_node/4, branch_lookup/2, find_node/7, find_node/4, get_value/3, request_handler/3, delete_node/3]).
--export([async_request_handler/2, find_k_nearest_node/6, lookup_for_value/5, find_k_nearest_node/4]).
+-export([async_request_handler/2, find_k_nearest_node/6, lookup_for_value/5, find_k_nearest_node/4, send_ping/2]).
 
 % Starts a new node in the Kademlia network.
 % K -> Number of bits to represent a node ID.
@@ -102,8 +102,16 @@ talk(NodePid) when is_pid(NodePid)->
 shut(NodePid) when is_pid(NodePid) ->
     com:send_async_request(NodePid, {shut}).
 
+% This function is used from the shell
+% to start a procedure to find the K nearest nodes
+% to a given hash id
 shell_find_nearest_nodes(NodePid, HashId) ->
     com:send_request(NodePid, {shell_find_nearest_nodes, HashId}).
+
+% This function is used from the shell 
+% to tell a node to send a ping to another node
+send_ping(NodePid,ToNodePid) when is_pid(NodePid) ->
+    com:send_request(NodePid, {send_ping, ToNodePid}).
 
 % This command is used to kill a process
 kill(Pid) when is_pid(Pid) ->
@@ -394,6 +402,11 @@ request_handler({fill_my_routing_table, FilledIndexes}, ClientPid, State) ->
 request_handler(ping, _, State) ->
     % Reply with pong to indicate that the node is alive and reachable.
     {reply, {pong, ok}, State};
+% This request is used from the shell
+% to tell a node to send a ping to another node
+request_handler({send_ping, ToNodePid}, _, State) ->
+    Result = ?MODULE:ping(ToNodePid),
+    {reply, Result, State};
 % This function is used to find a value in the network 
 % from the shell
 request_handler({shell_lookup, Key, Verbose}, _, State) ->

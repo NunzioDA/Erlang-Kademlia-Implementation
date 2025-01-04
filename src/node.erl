@@ -7,7 +7,7 @@
 
 -module(node).
 -behaviour(gen_server).
--export([init/1, handle_call/3, handle_cast/2, terminate/2, kill/1]).
+-export([init/1, handle_call/3, handle_cast/2, terminate/2, kill/1, handle_info/2]).
 -export([start/3, start/4, ping/1, distribute_value/5, send_request/4, lookup/3, shell_find_nearest_nodes/2]).
 -export([distribute/3, lookup/2, get_routing_table/1, talk/1, shut/1, start_server/4]).
 -export([save_node/4, branch_lookup/2, find_node/7, find_node/4, get_value/3, request_handler/3, delete_node/3]).
@@ -36,7 +36,7 @@ start_server(K, T, InitAsBootstrap, Verbose) ->
 % - ValuesMap: Used to store key-value pairs managed by the node.
 init([K, T, InitAsBootstrap, Verbose]) ->
     % Trapping exit so we can catch exit messages
-    % process_flag(trap_exit, true),
+    process_flag(trap_exit, true),
     com:save_address(self()),
     utils:set_verbose(Verbose),
     % Generate a unique integer to create distinct ETS table names for each node.
@@ -137,9 +137,9 @@ ping(NodePid) when is_pid(NodePid) ->
 % RoutingTable: the table where store the information.
 % K: The number of bits used for the node's hash_id representation.
 save_node(NodePid, RoutingTable, K, K_Bucket_Size) when is_pid(NodePid) ->
-    
+    MyAddress = com:my_address(),
     ShellPid = whereis(shellPid),
-    if(NodePid /= ShellPid) ->
+    if(NodePid /= ShellPid andalso NodePid /= MyAddress) ->
         NodeHashId = utils:k_hash(NodePid, K),
         % Determine the branch ID in the routing table corresponding to the hash ID.
         BranchID = utils:get_subtree_index(NodeHashId, com:my_hash_id(K)),
@@ -494,10 +494,28 @@ terminate(Reason, _State) ->
     utils:debug_print("Node ~p is terminating for reason: ~p.~n", [com:my_address(), Reason]),
     ok.
 
-% handle_info({'EXIT', FromPid, Reason}, State) ->
-%     io:format("Ricevuto segnale di uscita da ~p con motivo ~p~n", [FromPid, Reason]),
-%     % Esegui un cleanup o altre operazioni
-%     {noreply, State}.
+handle_info({'EXIT', FromPid, Reason}, State) ->
+    io:format("Ricevuto segnale di uscita da ~p con motivo ~p~n", [FromPid, Reason]),
+    {RoutingTable, _, K, T, Bucket_Size} = State,
+    JoinThread = get(join_thread_pid),
+    RepublisherThread = get(republisher_pid),
+    SpareNodeManagerThread = get(spare_node_manager),
+
+    if FromPid == JoinThread ->
+        % Restarting join thread
+        join_thread:start(K,RoutingTable,Bucket_Size,SpareNodeManagerThread);
+    FromPid == RepublisherThread ->
+        % Restarting republisher thread
+        republisher:start(RoutingTable, K, T, Bucket_Size);
+    FromPid == SpareNodeManagerThread ->
+        % Restarting spare node manager thread
+        spare_node_manager:start(RoutingTable, K),
+        exit(JoinThread, "Restarted spare node managr")
+    end, 
+    thread:check_threads_status(),
+    {noreply, State};
+handle_info(_,State) ->
+    {noreply, State}.    
 
 %----------------------------------------------
 %  NODE AS A CLIENT

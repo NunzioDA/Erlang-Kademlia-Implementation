@@ -12,7 +12,7 @@
 -module(thread).
 
 -export([start/1, check_verbose/0, set_verbose/1, kill_all/0, save_thread/1]).
--export([get_threads/0, send_message_to_my_threads/1, kill/1]).
+-export([get_threads/0, send_message_to_my_threads/1, kill/1, check_threads_status/0]).
 
 start(Function) ->
     ParentAddress = com:my_address(),
@@ -77,6 +77,22 @@ save_thread(Pid)->
     put(my_threads, [Pid | Threads])
 .
 
+check_threads_status() ->
+    Threads = ?MODULE:get_threads(),
+    NewThreads = lists:foldl(
+        fun(Pid, Acc) ->
+            IsAlive = erlang:is_process_alive(Pid),
+            if IsAlive ->
+                [Pid | Acc];
+            true -> 
+                Acc
+            end
+        end,
+        [],
+        Threads
+    ),
+    put(my_threads, NewThreads)
+.    
 % This method is used to get all the threads started
 % from a parent process 
 get_threads() ->
@@ -113,3 +129,4 @@ send_message_to_my_threads(Message) ->
     put(my_threads, NewThreads),
     ok
 .
+

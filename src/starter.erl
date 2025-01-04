@@ -9,7 +9,7 @@
 
 -export([start/0, start_test_environment/0, registerShell/0, start_kademlia_network/4]).
 -export([wait_for_network_to_converge/1, wait_for_progress/1, destroy/0, wait_for_stores/1]).
--export([choose_test/0, start_test/1]).
+-export([choose_test/0, start_test/1,enter_processes_to_kill/1]).
 -export([test_dying_process/0, pick_random_pid/1, test_join_mean_time/0,wait_for_progress/2]).
 -export([test_lookup_meantime/0, wait_for_lookups/1, test_republisher/0]).
 
@@ -211,6 +211,20 @@ test_join_mean_time() ->
     utils:print("Mean time for new processes to join the network: ~pms~n",[JoinMeanTimeNewP])
 .
 
+enter_processes_to_kill(Max) ->
+    Input = io:get_line("Please enter the number of nodes that stored the value to kill (from 1 to " ++ integer_to_list(Max) ++ ") : "),
+    try
+        case string:to_integer(string:trim(Input)) of
+            {Value, _} when Value >= 1, Value =< Max -> Value;
+            _ -> 
+                utils:print("Invalid input.~n"),
+                enter_processes_to_kill(Max)
+        end
+    catch _:_ ->
+        utils:print("Invalid input.~n"),
+        enter_processes_to_kill(Max)
+    end.
+
 test_lookup_meantime() ->
     ?MODULE:start_test_environment(),
     BootstrapNodes = 10,
@@ -250,7 +264,9 @@ test_lookup_meantime() ->
     utils:print("Node that stored foo: ~p~n", [NearestNodes]),
 
     LenNearestNodes = length(NearestNodes),
-    NodesToKill = LenNearestNodes - 1,
+    Max = LenNearestNodes - 1,
+    NodesToKill = enter_processes_to_kill(Max),
+        
     utils:print("Killing ~p nodes...~n", [NodesToKill]),
     lists:foreach(
         fun(I) ->

@@ -93,25 +93,33 @@ sort_node_list(NodeList, TargetId) ->
 
 % This function is used to remove duplicates from a list
 remove_duplicates(List) ->
-    lists:foldl(fun(Element, Acc) ->
-        Condition = lists:member(Element, Acc),
-        case Condition of
-            true -> Acc; 
-            false -> [Element | Acc]
-        end
-    end, [], List).
+    lists:foldl(
+        fun(Element, Acc) ->
+            Condition = lists:member(Element, Acc),
+            case Condition of
+                true -> Acc; 
+                false -> Acc ++ [Element]
+            end
+        end, 
+        [], 
+        List
+    ).
 
 % This function is used to filter already contacted nodes
 % from a nodes list
 remove_contacted_nodes(NodesList, ContactedNodes) ->
-    lists:foldl(fun(Element, Acc) ->
-        {_,Pid} = Element,
-        Condition = lists:member(Pid, ContactedNodes),
-        case Condition of
-            true -> Acc; 
-            false -> [Element | Acc]
-        end
-    end, [], NodesList).
+    lists:foldl(
+        fun(Element, Acc) ->
+            {_,Pid} = Element,
+            Condition = lists:member(Pid, ContactedNodes),
+            case Condition of
+                true -> Acc; 
+                false -> Acc ++ [Element]
+            end
+        end, 
+        [],
+        NodesList
+    ).
 
 % This function is used to check if 
 % there are empty branches in the routing table.
@@ -151,6 +159,8 @@ empty_branches(RoutingTable, K) ->
 
     % AnyEmpty.
 
+% This function is used to check if 
+% a pid is contained in a routing table
 pid_in_routing_table(RoutingTable, Pid, K) ->
     BranchId = ?MODULE:get_subtree_index(?MODULE:k_hash(Pid, K), com:my_hash_id(K)),
     

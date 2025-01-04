@@ -494,8 +494,7 @@ terminate(Reason, _State) ->
     utils:debug_print("Node ~p is terminating for reason: ~p.~n", [com:my_address(), Reason]),
     ok.
 
-handle_info({'EXIT', FromPid, Reason}, State) ->
-    io:format("Ricevuto segnale di uscita da ~p con motivo ~p~n", [FromPid, Reason]),
+handle_info({'EXIT', FromPid, _}, State) ->
     {RoutingTable, _, K, T, Bucket_Size} = State,
     JoinThread = get(join_thread_pid),
     RepublisherThread = get(republisher_pid),
@@ -510,7 +509,8 @@ handle_info({'EXIT', FromPid, Reason}, State) ->
     FromPid == SpareNodeManagerThread ->
         % Restarting spare node manager thread
         spare_node_manager:start(RoutingTable, K),
-        exit(JoinThread, "Restarted spare node managr")
+        exit(JoinThread, "Restarted spare node manager");
+    true -> ok
     end, 
     thread:check_threads_status(),
     {noreply, State};

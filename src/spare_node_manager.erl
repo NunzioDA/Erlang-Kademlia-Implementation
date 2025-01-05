@@ -10,7 +10,7 @@
 -module(spare_node_manager).
 -behaviour(gen_server).
 
--export([start/2, start_link/4, init/1, handle_call/3, handle_cast/2, delegate/1, last_updated_branch/0]).
+-export([start/2, start_link/4, init/1, handle_call/3, handle_cast/2, delegate/1, append_node/5]).
 
 % Starting the spare node manager linking it to the parent
 start(RoutingTable, K)->
@@ -34,31 +34,29 @@ delegate(Pid)->
 init([ParentAddress, Verbose, RoutingTable, K]) ->
     utils:set_verbose(Verbose),
     com:save_address(ParentAddress),
-    {ok, {RoutingTable, K}}.
+    LastUpdatedBranch = -1,
+    {ok, {RoutingTable, K, LastUpdatedBranch}}.
 
 handle_call(_Request, _From, State) ->
     {reply, ok, State}.
 
-% Check what is the last updated branch
-last_updated_branch()->
-    case get(last_updated_branch) of
-        undefined -> -1;
-        BranchID -> BranchID
-    end.
+% This function is used to append a node to al 
+append_node(RoutingTable, Tail, NodeHashId, NodePid, BranchID) ->
+    UpdatedNodeList = Tail ++ [{NodeHashId, NodePid}], 
+    ets:insert(RoutingTable, {BranchID, UpdatedNodeList}).
 
 % Handling the spare node
 handle_cast({check, NodePid}, State) ->
-    {RoutingTable, K} = State,
+    {RoutingTable, K,LastUpdatedBranch} = State,
     NodeHashId = utils:k_hash(NodePid, K),
     BranchID = utils:get_subtree_index(NodeHashId, com:my_hash_id(K)),
-    LastUpdatedBranch = ?MODULE:last_updated_branch(),
 
     % Only start the ping and change procedure
     % if the last updated branch is different from the
     % current node branch.
     % This is used to avoid endless pinging sequence.
     if LastUpdatedBranch /= BranchID ->
-        put(last_updated_branch, BranchID),
+        NewLastUpdatedBranch = BranchID,
 
         [{_,NodeList}] = ets:lookup(RoutingTable, BranchID),
 
@@ -66,15 +64,23 @@ handle_cast({check, NodePid}, State) ->
         [{LastSeenNodeHashId, LastSeenNodePid} | Tail] = NodeList,
         % Check if the last node is still responsive.
         case node:ping(LastSeenNodePid) of 
-            % If the last node is responsive, discard the new node.
+            % If the last node is responsive, discard the new node with
+            % a probability of 4/5 and add the new node with a probability
+            % of 1/5.
+            % This is used to increase the probability that a new node
+            % is known by some node in the network.
             {pong, ok} -> 
-                UpdatedNodeList = Tail ++ [{LastSeenNodeHashId, LastSeenNodePid}], 
-                ets:insert(RoutingTable, {BranchID, UpdatedNodeList});
+                RandomNumber = rand:uniform(5),
+                if RandomNumber == 5 ->
+                    ?MODULE:append_node(RoutingTable, Tail, NodeHashId, NodePid, BranchID);
+                true ->
+                    ?MODULE:append_node(RoutingTable, Tail, LastSeenNodeHashId, LastSeenNodePid, BranchID)
+                end;
             % If the last node is not responsive, discard it and add the new node.
             {pang, _} -> 
-                UpdatedNodeList = Tail ++ [{NodeHashId, NodePid}],
-                ets:insert(RoutingTable, {BranchID, UpdatedNodeList})
+                ?MODULE:append_node(RoutingTable, Tail, NodeHashId, NodePid, BranchID)
         end;
-    true -> ok
+    true -> 
+        NewLastUpdatedBranch = LastUpdatedBranch
     end,
-    {noreply, State}.
+    {noreply, {RoutingTable,K,NewLastUpdatedBranch}}.

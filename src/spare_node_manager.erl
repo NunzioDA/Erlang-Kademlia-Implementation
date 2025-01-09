@@ -31,11 +31,11 @@ delegate(Pid)->
         undefined -> % It may be a subprocess of the node (join thread)
                      % requiring node dictionary to get join thread pid
             {_,Dictionary} = process_info(com:my_address(), dictionary),
-            case lists:keyfind(join_thread_pid, 1, Dictionary) of
+            case lists:keyfind(spare_node_manager, 1, Dictionary) of
                 % The spare node manager is not started
                 false -> ServerPid = undefined;
                 % Returning the spare node manager pid
-                {join_thread_pid, ServerPidFound} -> ServerPid = ServerPidFound
+                {spare_node_manager, ServerPidFound} -> ServerPid = ServerPidFound
             end;
         % Returning the spare node manager pid
         ServerPidFound -> ServerPid = ServerPidFound

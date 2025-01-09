@@ -27,8 +27,25 @@ start_link(ParentAddress, Verbose, RoutingTable, K) ->
 
 % delegate the node to the spare_node_manager
 delegate(Pid)->
-    ServerPid = get(spare_node_manager),
-    gen_server:cast(ServerPid, {check, Pid}).
+    case get(spare_node_manager) of
+        undefined -> % It may be a subprocess of the node (join thread)
+                     % requiring node dictionary to get join thread pid
+            {_,Dictionary} = process_info(com:my_address(), dictionary),
+            case lists:keyfind(join_thread_pid, 1, Dictionary) of
+                % The spare node manager is not started
+                false -> ServerPid = undefined;
+                % Returning the spare node manager pid
+                {join_thread_pid, ServerPidFound} -> ServerPid = ServerPidFound
+            end;
+        % Returning the spare node manager pid
+        ServerPidFound -> ServerPid = ServerPidFound
+    end,
+
+    if ServerPid /= undefined ->
+        gen_server:cast(ServerPid, {check, Pid});
+    true ->
+        utils:print("Start a spare node manager before delegating pids")
+    end.
 
 % Initializing gen_server
 init([ParentAddress, Verbose, RoutingTable, K]) ->

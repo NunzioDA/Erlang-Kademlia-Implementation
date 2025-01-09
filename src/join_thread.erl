@@ -8,18 +8,16 @@
 %
 %
 -module(join_thread).
--export([start/4, join_procedure_starter/3, join_procedure_starter/4, join_procedure/6, pick_bootstrap/0, nearest_bootstrap/1]).
+-export([start/3, join_procedure_starter/3, join_procedure_starter/4, join_procedure/6, pick_bootstrap/0, nearest_bootstrap/1]).
 -export([check_deletion_message/3, check_for_empty_branches/3, deleted_node/0]).
 
 % This function starts the thread signaling the
 % start and the end of the join procedure to the
 % analytics_collector
-start(K, RoutingTable, BucketSize,SpareNodeManager) ->
+start(K, RoutingTable, BucketSize) ->
     % Starting a new process to join the network.
     Pid = thread:start(
         fun() -> 
-            put(spare_node_manager, SpareNodeManager),
-
             EventId = analytics_collector:started_join_procedure(),
             ?MODULE:join_procedure_starter(RoutingTable, K, BucketSize),
             analytics_collector:finished_join_procedure(EventId),

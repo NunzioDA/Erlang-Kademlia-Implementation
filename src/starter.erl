@@ -190,7 +190,7 @@ test_join_mean_time() ->
     [{FirstFinished,_,_} | _] = analytics_collector:get_finished_join_nodes(),
     {ok,RoutingTable} = node:get_routing_table(FirstFinished),
 
-    utils:print("~n~nRouting table of the first node that finished joining: ~n"),
+    utils:print("~n~nRouting table of the first node (~p) that finished joining: ~n",[FirstFinished]),
     utils:print_routing_table(RoutingTable),
 
 

@@ -29,9 +29,12 @@ start(K, RoutingTable, BucketSize) ->
     Pid
 .
 
+% This function is used to signal to
+% the join thread that a node has been
+% deleted from the routing table
 deleted_node() ->
     case get(join_thread_pid) of
-        undefined -> utils:print("Start a join thread before deleting nodes");
+        undefined -> utils:print("Start a join thread before signaling deleted nodes");
         Pid -> Pid ! {deleted_node}
     end. 
 
@@ -73,6 +76,9 @@ pick_bootstrap() ->
             Bootstrap
     end.
 
+% This function is used to get
+% the nearest bootstrap node  
+% to this node
 nearest_bootstrap(K) ->
     BootstrapList = analytics_collector:get_bootstrap_list(),
     %converting the list to a list of {hash, pid}

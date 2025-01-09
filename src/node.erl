@@ -51,7 +51,7 @@ init([K, T, InitAsBootstrap, Verbose]) ->
     % Define the bucket size for routing table entries.
     Bucket_Size = 20,
 
-    SpareNodeManager = spare_node_manager:start(RoutingTable, K),
+    spare_node_manager:start(RoutingTable, K),
     republisher:start(RoutingTable, K, T, Bucket_Size),
     analytics_collector:enroll_node(),
 
@@ -60,7 +60,7 @@ init([K, T, InitAsBootstrap, Verbose]) ->
     true -> ok
     end,
     
-    join_thread:start(K,RoutingTable,Bucket_Size,SpareNodeManager),
+    join_thread:start(K,RoutingTable,Bucket_Size),
 
     % Return the initialized state, containing ETS tables and configuration parameters.
     {ok, {RoutingTable, ValuesTable, K, T, Bucket_Size}}.
@@ -177,7 +177,7 @@ save_node(NodePid, RoutingTable, K, K_Bucket_Size) when is_pid(NodePid) ->
                             % If the list is full, check the last node in the list.
                             false -> 
                                 % Delegating spare node to the spare_node_manager
-                            spare_node_manager:delegate(NodePid)
+                                spare_node_manager:delegate(NodePid)
                         end
                 end
         end;
@@ -502,14 +502,13 @@ handle_info({'EXIT', FromPid, _}, State) ->
 
     if FromPid == JoinThread ->
         % Restarting join thread
-        join_thread:start(K,RoutingTable,Bucket_Size,SpareNodeManagerThread);
+        join_thread:start(K,RoutingTable,Bucket_Size);
     FromPid == RepublisherThread ->
         % Restarting republisher thread
         republisher:start(RoutingTable, K, T, Bucket_Size);
     FromPid == SpareNodeManagerThread ->
         % Restarting spare node manager thread
-        spare_node_manager:start(RoutingTable, K),
-        exit(JoinThread, "Restarted spare node manager");
+        spare_node_manager:start(RoutingTable, K);
     true -> ok
     end, 
     thread:check_threads_status(),

@@ -77,11 +77,11 @@ handle_cast({check, NodePid}, State) ->
 
         [{_,NodeList}] = ets:lookup(RoutingTable, BranchID),
 
-        % Extract the last seen node in the list.
-        [{LastSeenNodeHashId, LastSeenNodePid} | Tail] = NodeList,
-        % Check if the last node is still responsive.
-        case node:ping(LastSeenNodePid) of 
-            % If the last node is responsive, discard the new node with
+        % Extract the least recently seen node in the list.
+        [{LeastRecentNodeHashId, LeastRecentNodePid} | Tail] = NodeList,
+        % Check if the least recent node is still responsive.
+        case node:ping(LeastRecentNodePid) of 
+            % If the least recent node is responsive, discard the new node with
             % a probability of 4/5 and add the new node with a probability
             % of 1/5.
             % This is used to increase the probability that a new node
@@ -91,9 +91,9 @@ handle_cast({check, NodePid}, State) ->
                 if RandomNumber == 5 ->
                     ?MODULE:append_node(RoutingTable, Tail, NodeHashId, NodePid, BranchID);
                 true ->
-                    ?MODULE:append_node(RoutingTable, Tail, LastSeenNodeHashId, LastSeenNodePid, BranchID)
+                    ?MODULE:append_node(RoutingTable, Tail, LeastRecentNodeHashId, LeastRecentNodePid, BranchID)
                 end;
-            % If the last node is not responsive, discard it and add the new node.
+            % If the least recent node is not responsive, discard it and add the new node.
             {pang, _} -> 
                 ?MODULE:append_node(RoutingTable, Tail, NodeHashId, NodePid, BranchID)
         end;

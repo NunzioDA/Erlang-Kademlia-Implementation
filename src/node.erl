@@ -37,7 +37,7 @@ start_server(K, T, InitAsBootstrap, Verbose) ->
 init([K, T, InitAsBootstrap, Verbose]) ->
     % Trapping exit so we can catch exit messages
     process_flag(trap_exit, true),
-    com:save_address(self()),
+    
     utils:set_verbose(Verbose),
     % Generate a unique integer to create distinct ETS table names for each node.
     UniqueInteger = integer_to_list(erlang:unique_integer([positive])),    

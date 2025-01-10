@@ -371,9 +371,10 @@ request_handler({fill_my_routing_table, FilledIndexes}, ClientPid, State) ->
         BranchesToLookup
     ),
 
-    % If the nodes dont have the same hash
-    % take 2 nodes from each of the remaining
-    % buckets giving the client some node to contact
+    % If the nodes dont have the same hash take at
+    % most Bucket_Size div 2 nodes from each of the 
+    % remaining buckets giving the client some 
+    % node to contact
     if SubTreeIndex =< K ->
         OtherBranchesToLookUp = lists:seq(SubTreeIndex, K),
         OtherBranches = lists:foldl(

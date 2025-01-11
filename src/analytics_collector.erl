@@ -11,10 +11,12 @@
 
 -export([init/1, handle_call/3, handle_cast/2, listen_for/1, notify_listeners/3, kill/0, enroll_node/0, stored_value/1]).
 -export([start/0, enroll_bootstrap/0, get_node_list/0, started_join_procedure/0, get_started_join_nodes/0, flush_join_events/0]).
--export([finished_join_procedure/1, get_unfinished_join_nodes/0, get_finished_join_nodes/0, flush_lookups_events/0, flush_nodes_that_stored/0]).
+-export([finished_join_procedure/1, get_unfinished_join_nodes/0, get_finished_join_nodes/0, flush_lookups_events/0]).
 -export([start_link/0, add/2, get_events/1, make_request/2, calculate_mean_time/2, register_new_event/4, empty_event_list/1]).
 -export([started_time_based_event/1, started_lookup/0, finished_time_based_event/2, finished_lookup/1, lookup_mean_time/0]).
 -export([get_started_lookup/0, get_bootstrap_list/0, join_procedure_mean_time/0, get_nodes_that_stored/1,get_finished_lookup/0]).
+-export([get_started_distribute/0,get_finished_distribue/0, flush_distribue_events/0, started_distribute/0, finished_distribue/1]).
+-export([distribute_mean_time/0, flush_nodes_that_stored/0, time_based_event_mean_time/2]).
 % --------------------------------
 % Starting methods
 % --------------------------------
@@ -44,7 +46,9 @@ start_link() ->
 % Add event methods
 %------------------------------------
 %
-
+%--------------------------------------------
+% Bootstrap and processes
+%
 % This function is used to enroll a process as 
 % a bootstrap node
 enroll_bootstrap() ->
@@ -54,7 +58,9 @@ enroll_bootstrap() ->
 enroll_node()->
 	?MODULE:add(node, 1).
 
-
+%--------------------------------------------
+% Join
+%
 % This function is used to signal that a process started
 % the join_procedure
 started_join_procedure() ->
@@ -65,6 +71,9 @@ started_join_procedure() ->
 finished_join_procedure(EventId) ->
 	?MODULE:finished_time_based_event(finished_join_procedure, EventId).
 
+%--------------------------------------------
+% Lookup
+%
 % This function is used to signal that a process started
 % the lookup procedure
 started_lookup() ->
@@ -75,6 +84,22 @@ started_lookup() ->
 finished_lookup(EventId) ->
 	?MODULE:finished_time_based_event(finished_lookup, EventId).
 
+%--------------------------------------------
+% Distribute
+%
+% This function is used to signal that a process started
+% the distribution procedure
+started_distribute() ->
+	?MODULE:started_time_based_event(started_distribute).
+
+% This function is used to signal that a process finished
+% the distribution procedure
+finished_distribue(EventId) ->
+	?MODULE:finished_time_based_event(finished_distribue, EventId).
+
+%--------------------------------------------
+% Store
+%
 % This function is used to signal a node saved the value 
 % relative to a specific key
 stored_value(Key) ->
@@ -82,37 +107,17 @@ stored_value(Key) ->
 	?MODULE:add(stored_value, {UniqueInteger, Key}).
 
 
-% This function is used to signal the start of a time based event.
-% It generates a unique integer that will be used to associate 
-% start events with finish events.
-started_time_based_event(Event) ->
-	UniqueInteger = erlang:unique_integer([positive]),
-	?MODULE:add(Event, UniqueInteger),
-	UniqueInteger.
-% This function is used to signal the end of a time based event.
-% It requires the EventId that is the unique integer generated in
-% started_time_based_event
-finished_time_based_event(Event, EventId) ->
-	?MODULE:add(Event, EventId).	
-
 %------------------------------------
 % Results management
 %------------------------------------
 %
-lookup_mean_time() ->
-	StartedTimes = ?MODULE:get_events(started_lookup),
-	FinishedTimes = ?MODULE:get_events(finished_lookup),
-
-	MeanTime = ?MODULE:calculate_mean_time(StartedTimes, FinishedTimes),
-	MeanTime.
+%--------------------------------------------
+% Join
+%
 % This function is used to compute the join_procedure
 % mean time based on the signaled events
 join_procedure_mean_time() ->
-	StartedTimes = ?MODULE:get_started_join_nodes(),
-	FinishedTimes = ?MODULE:get_finished_join_nodes(),
-
-	MeanTime = ?MODULE:calculate_mean_time(StartedTimes, FinishedTimes),
-	MeanTime.
+	time_based_event_mean_time(started_join_procedure, finished_join_procedure).
 % This function return all the processes that haven't finished the
 % join procedure
 get_unfinished_join_nodes()->
@@ -137,6 +142,12 @@ flush_join_events() ->
 	empty_event_list(started_join_procedure),
 	empty_event_list(finished_join_procedure).
 
+%--------------------------------------------
+% Lookup
+%
+% This function computes the lookup mean time
+lookup_mean_time() ->
+	time_based_event_mean_time(started_lookup, finished_lookup).
 % This function returns all the processes that have
 % started the lookup procedure
 get_started_lookup() ->
@@ -152,6 +163,31 @@ flush_lookups_events() ->
 	empty_event_list(started_lookup),
 	empty_event_list(finished_lookup).
 
+%--------------------------------------------
+% Distribute
+%
+% This function returns all the processes that have
+% started the lookup procedure
+get_started_distribute() ->
+	?MODULE:get_events(started_distribute).
+
+% This function returns all the processes that have
+% finished the lookup procedure
+get_finished_distribue() ->
+	?MODULE:get_events(finished_distribue).
+
+% This function flushes the lookup procedure results
+flush_distribue_events() ->
+	empty_event_list(started_distribute),
+	empty_event_list(finished_distribue).
+
+% This function is used to 
+distribute_mean_time() ->
+	time_based_event_mean_time(started_distribute,finished_distribue).
+
+%--------------------------------------------
+% Bootstrap and processes
+%
 % This function returns all the processes that have
 % enrolled as bootstrap nodes
 get_bootstrap_list() ->
@@ -174,6 +210,9 @@ get_node_list() ->
 		?MODULE:get_events(node)
 	).
 
+%--------------------------------------------
+% Store
+%
 % This function returns all the processes that have
 % stored the value relative to a specific key
 get_nodes_that_stored(Key) ->
@@ -242,6 +281,7 @@ listen_for(EventType) ->
 % -------------------------------------------	
 % GENERIC FUNCTIONS
 % -------------------------------------------
+
 % This function is the generic function used to add new events.
 add(EventType, Event) ->
 	ClientPid = com:my_address(),
@@ -254,6 +294,29 @@ get_events(EventType) ->
 		[{_, List}] -> List;
 		_ -> []
 	end.
+
+% This function is used to signal the start of a time based event.
+% It generates a unique integer that will be used to associate 
+% start events with finish events.
+started_time_based_event(Event) ->
+	UniqueInteger = erlang:unique_integer([positive]),
+	?MODULE:add(Event, UniqueInteger),
+	UniqueInteger.
+
+% This function is used to signal the end of a time based event.
+% It requires the EventId that is the unique integer generated in
+% started_time_based_event
+finished_time_based_event(Event, EventId) ->
+	?MODULE:add(Event, EventId).	
+
+% This function is used to compute time based event
+% mean time using calculate_mean_time
+time_based_event_mean_time(Started,Finished) ->
+	StartedTimes = ?MODULE:get_events(Started),
+	FinishedTimes = ?MODULE:get_events(Finished),
+
+	MeanTime = ?MODULE:calculate_mean_time(StartedTimes, FinishedTimes),
+	MeanTime.
 
 % This function is used to notify enrolled event listeners
 notify_listeners(EventType, Event, ListenersMap) ->

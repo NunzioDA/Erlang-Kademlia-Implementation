@@ -147,7 +147,7 @@ flush_join_events() ->
 %
 % This function computes the lookup mean time
 lookup_mean_time() ->
-	time_based_event_mean_time(started_lookup, finished_lookup).
+	?MODULE:time_based_event_mean_time(started_lookup, finished_lookup).
 % This function returns all the processes that have
 % started the lookup procedure
 get_started_lookup() ->
@@ -160,8 +160,8 @@ get_finished_lookup() ->
 
 % This function flushes the lookup procedure results
 flush_lookups_events() ->
-	empty_event_list(started_lookup),
-	empty_event_list(finished_lookup).
+	?MODULE:empty_event_list(started_lookup),
+	?MODULE:empty_event_list(finished_lookup).
 
 %--------------------------------------------
 % Distribute
@@ -178,8 +178,8 @@ get_finished_distribute() ->
 
 % This function flushes the lookup procedure results
 flush_distribute_events() ->
-	empty_event_list(started_distribute),
-	empty_event_list(finished_distribute).
+	?MODULE:empty_event_list(started_distribute),
+	?MODULE:empty_event_list(finished_distribute).
 
 % This function is used to 
 distribute_mean_time() ->
@@ -223,7 +223,7 @@ get_nodes_that_stored(Key) ->
 
 % This function flushes the stored_value events
 flush_nodes_that_stored() ->
-	empty_event_list(stored_value).
+	?MODULE:empty_event_list(stored_value).
 
 % This function is used to compute the mean time based on two
 % lists, the start times and the end times.

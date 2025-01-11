@@ -566,6 +566,7 @@ find_k_nearest_node(RoutingTable, HashID, BucketSize, K, [{NodeHash, NodePid}|T]
 % Client-side function to store a key/value pair in the K nodes closest
 % to the hash_id of the pair.
 distribute_value(Key, Value, RoutingTable, K, Bucket_Size) ->
+    Event = analytics_collector:started_distribute(),
     KeyHashId = utils:k_hash(Key, K),
     NodeList = ?MODULE:find_k_nearest_node(RoutingTable, KeyHashId, Bucket_Size, K),
     lists:foreach(
@@ -573,7 +574,8 @@ distribute_value(Key, Value, RoutingTable, K, Bucket_Size) ->
             com:send_async_request(NodePid, {store, Key, Value})
         end,
         NodeList
-    ).
+    ),
+    analytics_collector:finished_distribue(Event).
 
 % Finds the value associated with a given key in the network
 % by sending find_value requests to node that are every time closer to

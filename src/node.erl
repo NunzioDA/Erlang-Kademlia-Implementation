@@ -575,7 +575,7 @@ distribute_value(Key, Value, RoutingTable, K, Bucket_Size) ->
         end,
         NodeList
     ),
-    analytics_collector:finished_distribue(Event).
+    analytics_collector:finished_distribute(Event).
 
 % Finds the value associated with a given key in the network
 % by sending find_value requests to node that are every time closer to

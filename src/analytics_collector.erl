@@ -15,7 +15,7 @@
 -export([start_link/0, add/2, get_events/1, make_request/2, calculate_mean_time/2, register_new_event/4, empty_event_list/1]).
 -export([started_time_based_event/1, started_lookup/0, finished_time_based_event/2, finished_lookup/1, lookup_mean_time/0]).
 -export([get_started_lookup/0, get_bootstrap_list/0, join_procedure_mean_time/0, get_nodes_that_stored/1,get_finished_lookup/0]).
--export([get_started_distribute/0,get_finished_distribue/0, flush_distribue_events/0, started_distribute/0, finished_distribue/1]).
+-export([get_started_distribute/0,get_finished_distribute/0, flush_distribute_events/0, started_distribute/0, finished_distribute/1]).
 -export([distribute_mean_time/0, flush_nodes_that_stored/0, time_based_event_mean_time/2]).
 % --------------------------------
 % Starting methods
@@ -94,8 +94,8 @@ started_distribute() ->
 
 % This function is used to signal that a process finished
 % the distribution procedure
-finished_distribue(EventId) ->
-	?MODULE:finished_time_based_event(finished_distribue, EventId).
+finished_distribute(EventId) ->
+	?MODULE:finished_time_based_event(finished_distribute, EventId).
 
 %--------------------------------------------
 % Store
@@ -173,17 +173,17 @@ get_started_distribute() ->
 
 % This function returns all the processes that have
 % finished the lookup procedure
-get_finished_distribue() ->
-	?MODULE:get_events(finished_distribue).
+get_finished_distribute() ->
+	?MODULE:get_events(finished_distribute).
 
 % This function flushes the lookup procedure results
-flush_distribue_events() ->
+flush_distribute_events() ->
 	empty_event_list(started_distribute),
-	empty_event_list(finished_distribue).
+	empty_event_list(finished_distribute).
 
 % This function is used to 
 distribute_mean_time() ->
-	time_based_event_mean_time(started_distribute,finished_distribue).
+	time_based_event_mean_time(started_distribute,finished_distribute).
 
 %--------------------------------------------
 % Bootstrap and processes

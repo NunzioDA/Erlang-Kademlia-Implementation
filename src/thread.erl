@@ -11,7 +11,7 @@
 
 -module(thread).
 
--export([start/1, check_verbose/0, set_verbose/1, kill_all/0, save_thread/1, save_named/2]).
+-export([start/1, check_verbose/0, set_verbose/1, kill_all/0, save_thread/1, save_named/2, receive_last_verbose/1]).
 -export([get_threads/0, send_message_to_my_threads/1, kill/1, check_threads_status/0, get_named/1]).
 
 start(Function) ->
@@ -54,17 +54,17 @@ check_verbose() ->
     receive
         {verbose, Verbose} ->
             % Discard any consecutive verbose messages and take only the last one
-            LastVerbose = receiveLastVerbose(Verbose),
+            LastVerbose = ?MODULE:receive_last_verbose(Verbose),
             utils:set_verbose(LastVerbose)
     after 0 ->
         ok
     end
 .
 % This function flushes every message except the last one
-receiveLastVerbose(LastVerbose) ->
+receive_last_verbose(LastVerbose) ->
     receive
         {verbose, NewVerbose} ->
-            receiveLastVerbose(NewVerbose)
+            ?MODULE:receive_last_verbose(NewVerbose)
     after 0 ->
         LastVerbose
     end

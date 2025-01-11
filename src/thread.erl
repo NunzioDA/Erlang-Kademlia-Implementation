@@ -11,8 +11,8 @@
 
 -module(thread).
 
--export([start/1, check_verbose/0, set_verbose/1, kill_all/0, save_thread/1]).
--export([get_threads/0, send_message_to_my_threads/1, kill/1, check_threads_status/0]).
+-export([start/1, check_verbose/0, set_verbose/1, kill_all/0, save_thread/1, save_named/2]).
+-export([get_threads/0, send_message_to_my_threads/1, kill/1, check_threads_status/0, get_named/1]).
 
 start(Function) ->
     ParentAddress = com:my_address(),
@@ -130,3 +130,28 @@ send_message_to_my_threads(Message) ->
     ok
 .
 
+% This function is used to save 
+% a thread Pid with a name in the
+% current process dictionary
+save_named(Name, Pid) when is_pid(Pid) ->
+    put(Name, Pid).
+
+% This function is used to get 
+% the pid of a thread saved with
+% save_named eather in the curren
+% process dictionary or in the parent
+% process dictionary
+get_named(Name) ->
+    case get(Name) of
+        undefined -> % It may be a subprocess of the node.
+                     % Requiring node dictionary to get thread pid
+            {_,Dictionary} = process_info(com:my_address(), dictionary),
+            case lists:keyfind(Name, 1, Dictionary) of
+                % The named thread is not started
+                false -> undefined;
+                % Returning the named thread pid
+                {Name, ServerPidFound} -> ServerPidFound
+            end;
+        % Returning the named thread pid
+        ServerPidFound -> ServerPidFound
+    end.

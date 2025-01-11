@@ -279,7 +279,7 @@ notify_listeners(EventType, Event, ListenersMap) ->
 make_request(Type, Request) ->
 	Pid = whereis(analytics_collector),
 	if Pid == undefined ->
-		throw({error, "Error: analytics_collector must to be started before an event can be added"});
+		throw({error, "Error: start the analytics_collector before adding events"});
 	true ->
 		case Type of
 			call -> gen_server:call(Pid, Request);

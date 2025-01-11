@@ -25,7 +25,7 @@ start(K, RoutingTable, BucketSize) ->
             ?MODULE:check_deletion_message(RoutingTable, K, BucketSize)
         end
     ),
-    put(join_thread_pid, Pid),
+    thread:save_named(join_thread_pid, Pid),
     Pid
 .
 
@@ -33,7 +33,7 @@ start(K, RoutingTable, BucketSize) ->
 % the join thread that a node has been
 % deleted from the routing table
 deleted_node() ->
-    case get(join_thread_pid) of
+    case thread:get_named(join_thread_pid) of
         undefined -> utils:print("Start a join thread before signaling deleted nodes");
         Pid -> Pid ! {deleted_node}
     end. 

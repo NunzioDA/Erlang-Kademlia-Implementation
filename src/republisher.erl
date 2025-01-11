@@ -18,7 +18,7 @@ start(RoutingTable, K, T, BucketSize) ->
             ?MODULE:republish_behaviour(#{},RoutingTable, K, T, BucketSize, CurrentMillis)
         end
     ),
-    put(republisher_pid, Pid),
+    thread:save_named(republisher_pid, Pid),
     Pid
 .
 
@@ -28,7 +28,7 @@ start(RoutingTable, K, T, BucketSize) ->
 % The pair is sent to the republisher
 % using the message new_pair
 add_pair(Key, Value) ->
-    case get(republisher_pid) of
+    case thread:get_named(republisher_pid) of
         undefined -> utils:print("Start a republisher before adding pairs");
         Pid -> Pid ! {new_pair, Key, Value}
     end.

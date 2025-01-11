@@ -17,7 +17,7 @@ start(RoutingTable, K)->
     ParentAddress = com:my_address(),
     Verbose = utils:verbose(),
     Pid = ?MODULE:start_link(ParentAddress,Verbose, RoutingTable, K),
-    put(spare_node_manager, Pid),
+    thread:save_named(spare_node_manager, Pid),
     Pid.
 
 % starting gen server
@@ -27,19 +27,7 @@ start_link(ParentAddress, Verbose, RoutingTable, K) ->
 
 % delegate the node to the spare_node_manager
 delegate(Pid)->
-    case get(spare_node_manager) of
-        undefined -> % It may be a subprocess of the node (join thread)
-                     % requiring node dictionary to get join thread pid
-            {_,Dictionary} = process_info(com:my_address(), dictionary),
-            case lists:keyfind(spare_node_manager, 1, Dictionary) of
-                % The spare node manager is not started
-                false -> ServerPid = undefined;
-                % Returning the spare node manager pid
-                {spare_node_manager, ServerPidFound} -> ServerPid = ServerPidFound
-            end;
-        % Returning the spare node manager pid
-        ServerPidFound -> ServerPid = ServerPidFound
-    end,
+    ServerPid = thread:get_named(spare_node_manager),
 
     if ServerPid /= undefined ->
         gen_server:cast(ServerPid, {check, Pid});

@@ -443,17 +443,6 @@ request_handler(_, _, State) ->
 % ASYNCHRONOUS REQUESTS MANAGEMENT
 % ---------------------------------------------------------------- 
 %
-% When a save_node request is received save_node is called
-handle_cast({{delete_node,NodePid}, SenderPid}, State) ->
-    {RoutingTable, _, K, _, _} = State,
-    MyAddress = com:my_address(),
-    if SenderPid == MyAddress ->
-        ?MODULE:delete_node(NodePid, RoutingTable, K);
-    true ->
-        ok
-    end,
-    {noreply, State};
-
 handle_cast({Request, SenderPid}, State) when is_tuple(Request) ->
     utils:debug_print("Handling ~p", [Request]),
     {RoutingTable, _, K, _, BucketSize} = State,
@@ -524,16 +513,7 @@ handle_info(_,State) ->
 send_request(Pid,Request,RoutingTable, K) -> 
     case com:send_request(Pid, Request) of
         {error, Reason} ->
-            ItsParentNode = self() == com:my_address(),
-            if ItsParentNode -> % If the parent node is the sender, delete the node from the routing table.
-                ?MODULE:delete_node(Pid, RoutingTable, K);
-            true->
-                PidInRouting = utils:pid_in_routing_table(RoutingTable, Pid, K),
-                if(PidInRouting) ->
-                    com:send_async_request(com:my_address(), {delete_node, Pid});
-                true -> ok
-                end
-            end,
+            ?MODULE:delete_node(Pid, RoutingTable, K),
             {error,Reason};
         Response -> Response
     end.

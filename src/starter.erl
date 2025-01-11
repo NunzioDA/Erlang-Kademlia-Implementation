@@ -154,7 +154,7 @@ test_dying_process() ->
     node:distribute(BootstrapNode,"foo", 0),
     
     ?MODULE:wait_for_stores(Nodes - 1),
-
+    
     {ok, NewRoutingTable} = node:get_routing_table(BootstrapNode),
     utils:print("~n~nNew routing table of the bootstrap node [~p] : ~n~n",[BootstrapNode]),
     utils:print_routing_table(NewRoutingTable)
@@ -248,6 +248,8 @@ test_lookup_meantime() ->
     node:distribute(BootstrapNode,"foo", 0),
     % Waiting to make sure the value is delivered
     ?MODULE:wait_for_stores(20),
+    DisrtibutionMeanTime = analytics_collector:distribute_mean_time(),
+    utils:print("~nDistribution mean time ~pms~n", [DisrtibutionMeanTime]),
 
     Lookups = 5,
     utils:print("~n~nExecuting ~p lookups for 'foo'~n",[Lookups]),
@@ -276,9 +278,6 @@ test_lookup_meantime() ->
         lists:seq(1, NodesToKill)
     ),
 
-    NotKilled = lists:nth(20, NearestNodes),
-    utils:print("~nNode not killed ~p~n",[NotKilled]),
-
     utils:print("~nExecuting ~p lookups for 'foo'~n",[Lookups]),
     ?MODULE:wait_for_lookups(Lookups),
     LookupMeanTime2 = analytics_collector:lookup_mean_time(),
@@ -302,9 +301,11 @@ test_republisher() ->
 
     [BootstrapNode | _] = analytics_collector:get_bootstrap_list(),
     utils:print("~nSaving 'foo' => 0 in the network with node ~p...~n", [BootstrapNode]),
-    node:distribute(BootstrapNode,"foo", 0),
-
+    node:distribute(BootstrapNode,"foo", 0),    
     ?MODULE:wait_for_stores(20),
+    DisrtibutionMeanTime = analytics_collector:distribute_mean_time(),
+    utils:print("~nDistribution mean time ~pms~n", [DisrtibutionMeanTime]),
+
     utils:print("~n~nGetting the nodes that stored 'foo'...~n"),
     NearestNodes = analytics_collector:get_nodes_that_stored("foo"),
 

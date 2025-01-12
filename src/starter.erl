@@ -7,9 +7,9 @@
 
 -module(starter).
 
--export([start/0, start_test_environment/2, registerShell/0, start_simulation/4]).
+-export([start/0, start_test_environment/2, registerShell/0, start_simulation/4, insert_positive_integer/1]).
 -export([wait_for_network_to_converge/1, wait_for_progress/1, destroy/0, wait_for_stores/1]).
--export([choose_test/0, start_test/1,enter_processes_to_kill/1, start_simulation/5]).
+-export([choose_test/0, start_test/1,enter_processes_to_kill/1, start_simulation/5, choose_parameters/0]).
 -export([test_dying_process/0, pick_random_pid/1, test_join_mean_time/0,wait_for_progress/2]).
 -export([test_lookup_meantime/0, wait_for_lookups/1, test_republisher/0, start_kademlia_network/4]).
 
@@ -43,6 +43,23 @@ choose_test() ->
         _ -> utils:print("Invalid choice~p~n", [Choice]),
             ?MODULE:choose_test()
     end.
+
+% This function is used to make the user choose
+% between the test with a large number of node 
+% or a smaller network
+choose_parameters() ->
+    utils:print("Please choose if you want to use a big network or a smaller one. ~n"),
+    utils:print("1. Network with 8000 nodes and 10 bootstrap nodes~n"),
+    utils:print("2. Network with 1000 nodes and 5 bootstrap nodes~n"),
+    Choice = io:get_line("Please enter the number of you choice: "),
+    utils:print("~n"),
+    case string:trim(Choice) of
+        "1" -> {10, 8000, 5};
+        "2" -> {5, 1000, 4};
+        _ -> utils:print("Invalid choice~p~n", [Choice]),
+            ?MODULE:choose_test()
+    end.
+
 
 start_test(TestFunction) ->
     % Check if the analytics_collector is already started
@@ -92,9 +109,9 @@ start_simulation(Bootstraps, Nodes, K, T) ->
 start_simulation(Bootstraps, Nodes, K, T, EventsToListen) ->
 
     ?MODULE:start_test_environment(K, T),
-    % Subscribing to finished_join_procedure 
+    % Subscribing to finished_filling_routing_table 
     % to listen for network convergence
-    analytics_collector:listen_for(finished_join_procedure),
+    analytics_collector:listen_for(finished_filling_routing_table),
 
     % Subscribing to specified events
     lists:foreach(
@@ -222,12 +239,12 @@ test_dying_process() ->
 % the nodes join mean time during and after network
 % convergence
 test_join_mean_time() ->
-    BootstrapNodes = 10,
-    Nodes = 8000,
-    K = 5,
-    T = 4000,
-
     utils:print_centered_rectangle(["Test join mean time"]),
+
+
+    {BootstrapNodes, Nodes, K} = choose_parameters(), 
+    T = 2000,
+
     StartMillis = erlang:monotonic_time(millisecond),
     ?MODULE:start_simulation(BootstrapNodes, Nodes, K, T),
 
@@ -237,7 +254,9 @@ test_join_mean_time() ->
     
 
     JoinMeanTime = analytics_collector:join_procedure_mean_time(),
-    utils:print("Mean time for each processes to join the network: ~pms~n",[JoinMeanTime]),
+    utils:print("Mean time for processes to join the network: ~pms~n",[JoinMeanTime]),
+    FillMeanTime = analytics_collector:filling_routing_table_mean_time(),
+    utils:print("Mean time for processes to fill the routing table: ~pms~n",[FillMeanTime]),
 
     [{FirstFinished,_,_} | _] = analytics_collector:get_finished_join_nodes(),
     {ok,RoutingTable} = node:get_routing_table(FirstFinished),
@@ -247,6 +266,7 @@ test_join_mean_time() ->
 
 
     analytics_collector:flush_join_events(),
+    analytics_collector:flush_filling_routing_table_events(),
     utils:print("~nStarting 5 new nodes to measure join time~n"),
 
     NewNodes = 5,
@@ -260,7 +280,9 @@ test_join_mean_time() ->
     utils:print("Waiting for new nodes to converge~n"),
     ?MODULE:wait_for_network_to_converge(NewNodes),
     JoinMeanTimeNewP = analytics_collector:join_procedure_mean_time(),
-    utils:print("Mean time for new processes to join the network: ~pms~n",[JoinMeanTimeNewP])
+    utils:print("Mean time for new processes to join the network: ~pms~n",[JoinMeanTimeNewP]),
+    FillMeanTimeP = analytics_collector:filling_routing_table_mean_time(),
+    utils:print("Mean time for new processes to fill the routing table: ~pms~n",[FillMeanTimeP])
 .
 
 enter_processes_to_kill(Max) ->
@@ -278,12 +300,12 @@ enter_processes_to_kill(Max) ->
     end.
 
 test_lookup_meantime() ->
-    BootstrapNodes = 10,
-    Nodes = 8000,
-    K = 5,
-    T = 3000000,
+    T = 3000000, % This has to be big so it doesnt 
+                 % interfere with the simulation
 
     utils:print_centered_rectangle(["Test lookup mean time"]),
+
+    {BootstrapNodes, Nodes, K} = choose_parameters(),
 
     ?MODULE:start_simulation(
         BootstrapNodes, 
@@ -335,13 +357,14 @@ test_lookup_meantime() ->
 .
 
 test_republisher() ->
-    BootstrapNodes = 10,
-    Nodes = 5000,
-    K = 5,
-    T = 5000,
+    T = 2000,
 
     utils:print_centered_rectangle(["Test republisher"]),
+
+    {BootstrapNodes, Nodes, K} = choose_parameters(),
+
     ?MODULE:start_simulation(BootstrapNodes, Nodes, K, T, [stored_value]),
+    
 
     [BootstrapNode | _] = analytics_collector:get_bootstrap_list(),
     utils:print("~nSaving 'foo' => 0 in the network with node ~p...~n", [BootstrapNode]),
@@ -449,17 +472,17 @@ wait_for_lookups(Lookups) ->
 % based on the event system of the analytics_collector
 % waiting for finished_join_procedure event
 %
-% call analytics_collector:listen_for(finished_join_procedure)
+% call analytics_collector:listen_for(finished_filling_routing_table)
 % before calling wait_for_network_to_converge
 wait_for_network_to_converge(Started) -> 
     utils:print_progress(0, true),   
     ?MODULE:wait_for_progress(
         fun() ->
-            Unfinished = analytics_collector:get_unfinished_join_nodes(),
+            Unfinished = analytics_collector:get_unfinished_filling_routing_table_nodes(),
             if length(Unfinished) > 0 ->
                 receive
-                    {event_notification, finished_join_procedure, _} ->
-                        Finished = analytics_collector:get_finished_join_nodes(),
+                    {event_notification, finished_filling_routing_table, _} ->
+                        Finished = analytics_collector:get_finished_filling_routing_table_nodes(),
                         Progress = length(Finished) / Started,
                         Progress
                 after 8000 ->
@@ -485,4 +508,18 @@ wait_for_progress(Progress, PrintBar) ->
         ok;
     true ->
         ?MODULE:wait_for_progress(Progress, PrintBar)
+    end.
+
+insert_positive_integer(Message) -> 
+    Input = io:get_line(Message),
+    try
+        case string:to_integer(string:trim(Input)) of
+            {Value, []} when Value >= 1 -> Value;
+            _ -> 
+                utils:print("Invalid input: Insert a positive integer.~n"),
+                ?MODULE:insert_positive_integer(Message)
+        end
+    catch _:_ ->
+        utils:print("Invalid input: Insert a positive integer.~n"),
+        ?MODULE:insert_positive_integer(Message)
     end.

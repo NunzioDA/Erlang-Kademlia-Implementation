@@ -1,5 +1,5 @@
 % -----------------------------------------------------------------------------
-% Module: join_thread
+% Module: routing_table_filler
 % Author(s): Nunzio D'Amore, Francesco Rossi
 % Date: 2024-12-28
 % Description: This module manages the behaviour of the thread that allows a node
@@ -7,7 +7,7 @@
 % -----------------------------------------------------------------------------
 %
 %
--module(join_thread).
+-module(routing_table_filler).
 -export([start/3, fill_routing_table/3, fill_routing_table/4, join_procedure/6, pick_bootstrap/0, nearest_bootstrap/1]).
 -export([check_deletion_message/3, check_for_empty_branches/3, deleted_node/0]).
 
@@ -25,7 +25,7 @@ start(K, RoutingTable, BucketSize) ->
             ?MODULE:check_deletion_message(RoutingTable, K, BucketSize)
         end
     ),
-    thread:save_named(join_thread_pid, Pid),
+    thread:save_named(routing_table_filler_pid, Pid),
     Pid
 .
 
@@ -33,7 +33,7 @@ start(K, RoutingTable, BucketSize) ->
 % the join thread that a node has been
 % deleted from the routing table
 deleted_node() ->
-    case thread:get_named(join_thread_pid) of
+    case thread:get_named(routing_table_filler_pid) of
         undefined -> utils:print("Start a join thread before signaling deleted nodes");
         Pid -> Pid ! {deleted_node}
     end. 

@@ -17,6 +17,9 @@
 -export([get_started_lookup/0, get_bootstrap_list/0, join_procedure_mean_time/0, get_nodes_that_stored/1,get_finished_lookup/0]).
 -export([get_started_distribute/0,get_finished_distribute/0, flush_distribute_events/0, started_distribute/0, finished_distribute/1]).
 -export([distribute_mean_time/0, flush_nodes_that_stored/0, time_based_event_mean_time/2, get_simulation_parameters/0]).
+-export([started_filling_routing_table/0, finished_filling_routing_table/1, filling_routing_table_mean_time/0]).
+-export([get_started_filling_routing_table_nodes/0, get_finished_filling_routing_table_nodes/0]).
+-export([flush_filling_routing_table_events/0, get_unfinished_filling_routing_table_nodes/0]).
 % --------------------------------
 % Starting methods
 % --------------------------------
@@ -70,6 +73,19 @@ started_join_procedure() ->
 % the join_procedure
 finished_join_procedure(EventId) ->
 	?MODULE:finished_time_based_event(finished_join_procedure, EventId).
+
+%--------------------------------------------
+% Fill routing table
+%
+% This function is used to signal that a process started
+% the filling_routing_table procedure
+started_filling_routing_table() ->
+	?MODULE:started_time_based_event(started_filling_routing_table).
+
+% This function is used to signal that a process finished
+% the filling_routing_table procedure
+finished_filling_routing_table(EventId) ->
+	?MODULE:finished_time_based_event(finished_filling_routing_table, EventId).
 
 %--------------------------------------------
 % Lookup
@@ -141,6 +157,38 @@ get_finished_join_nodes() ->
 flush_join_events() ->
 	?MODULE:empty_event_list(started_join_procedure),
 	?MODULE:empty_event_list(finished_join_procedure).
+
+%--------------------------------------------
+% Fill routing table
+%
+% This function is used to compute the filling_routing_table
+% mean time based on the signaled events
+filling_routing_table_mean_time() ->
+	?MODULE:time_based_event_mean_time(started_filling_routing_table, finished_filling_routing_table).
+
+% This function returns all the processes that have
+% started the filling_routing_table procedure
+get_started_filling_routing_table_nodes() ->
+	?MODULE:get_events(started_filling_routing_table).
+
+% This function returns all the processes that have
+% finished the filling_routing_table procedure
+get_finished_filling_routing_table_nodes() ->
+	?MODULE:get_events(finished_filling_routing_table).
+
+% This function return all the processes that haven't finished
+% filling their routing table
+get_unfinished_filling_routing_table_nodes()->
+	StartedTimes = ?MODULE:get_events(started_filling_routing_table),
+	FinishedTimes = ?MODULE:get_events(finished_filling_routing_table),
+
+	FilteredStartedTimes = [Pid || {Pid, _, _} <- StartedTimes, not lists:keymember(Pid, 1, FinishedTimes)],
+	FilteredStartedTimes.
+
+% This function flushes the fill routing table procedure results
+flush_filling_routing_table_events() ->
+	?MODULE:empty_event_list(started_filling_routing_table),
+	?MODULE:empty_event_list(finished_filling_routing_table).
 
 %--------------------------------------------
 % Lookup

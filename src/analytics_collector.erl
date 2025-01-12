@@ -399,7 +399,6 @@ register_new_event(Pid, EventType, Event, ListenersMap) ->
 	NewRecord = {Pid, Event, Millis},
 	case ets:lookup(analytics, EventType) of
 		[{_,EventList}] ->
-			ets:lookup(analytics, EventType),
 			NewEventList = EventList ++ [NewRecord],
 			ets:insert(analytics, {EventType, NewEventList});
 		[] ->

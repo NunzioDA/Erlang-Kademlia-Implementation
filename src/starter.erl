@@ -443,7 +443,7 @@ wait_for_lookups(Lookups) ->
 
     % Creating the function to compute the progress
     Fun = fun(F) ->
-        RandomBootstrap = join_thread:pick_bootstrap(),
+        RandomBootstrap = routing_table_filler:pick_bootstrap(),
         
         % checking if bootstrap is alive
         case erlang:is_process_alive(RandomBootstrap) of

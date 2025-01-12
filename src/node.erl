@@ -60,7 +60,7 @@ init([K, T, InitAsBootstrap, Verbose]) ->
     true -> ok
     end,
     
-    join_thread:start(K,RoutingTable,Bucket_Size),
+    routing_table_filler:start(K,RoutingTable,Bucket_Size),
 
     % Return the initialized state, containing ETS tables and configuration parameters.
     {ok, {RoutingTable, ValuesTable, K, T, Bucket_Size}}.
@@ -196,7 +196,7 @@ delete_node(NodePid, RoutingTable, K) when is_pid(NodePid)->
             LenAfter = length(NewNodeList),
             if LenBefore /= LenAfter ->
                 ets:insert(RoutingTable, {BranchID, NewNodeList}),
-                join_thread:deleted_node();
+                routing_table_filler:deleted_node();
             true -> ok
             end;
 
@@ -486,13 +486,13 @@ terminate(Reason, _State) ->
 
 handle_info({'EXIT', FromPid, _}, State) ->
     {RoutingTable, _, K, T, Bucket_Size} = State,
-    JoinThread = get(join_thread_pid),
+    JoinThread = get(routing_table_filler_pid),
     RepublisherThread = get(republisher_pid),
     SpareNodeManagerThread = get(spare_node_manager),
 
     if FromPid == JoinThread ->
         % Restarting join thread
-        join_thread:start(K,RoutingTable,Bucket_Size);
+        routing_table_filler:start(K,RoutingTable,Bucket_Size);
     FromPid == RepublisherThread ->
         % Restarting republisher thread
         republisher:start(RoutingTable, K, T, Bucket_Size);

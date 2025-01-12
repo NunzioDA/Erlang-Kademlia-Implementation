@@ -7,11 +7,11 @@
 
 -module(starter).
 
--export([start/0, start_test_environment/0, registerShell/0, start_kademlia_network/4]).
+-export([start/0, start_test_environment/2, registerShell/0, start_simulation/4]).
 -export([wait_for_network_to_converge/1, wait_for_progress/1, destroy/0, wait_for_stores/1]).
--export([choose_test/0, start_test/1,enter_processes_to_kill/1]).
+-export([choose_test/0, start_test/1,enter_processes_to_kill/1, start_simulation/5]).
 -export([test_dying_process/0, pick_random_pid/1, test_join_mean_time/0,wait_for_progress/2]).
--export([test_lookup_meantime/0, wait_for_lookups/1, test_republisher/0]).
+-export([test_lookup_meantime/0, wait_for_lookups/1, test_republisher/0, start_kademlia_network/4]).
 
 % This function is used to start the simulation
 % It prints the welcome message and the list of tests
@@ -61,8 +61,8 @@ start_test(TestFunction) ->
 % before starting the simulation
 % It starts the analytics_collector and registers
 % the shell pid
-start_test_environment() ->
-    analytics_collector:start(),
+start_test_environment(K,T) ->
+    analytics_collector:start(K,T),
     ?MODULE:registerShell()
 .
 
@@ -77,26 +77,85 @@ registerShell() ->
     true -> ok
     end.
 
-% This function starts a Kademlia network with specified parameters:
+% This function starts a Kademlia simulation by
+% starting the simulation enviroment and waiting for network
+% to converge.
+% To start the simulation it will use the specified parameters:
 %   - Bootstraps: number of bootstrap nodes in the network
 %   - Nodes: number of normal nodes in the network
 %   - K: number of bits of the hash ids
 %   - T: milliseconds before republishing
-start_kademlia_network(Bootstraps, Nodes, K, T) ->
-    utils:print("Starting a Kademlia network with ~p bootstrap and ~p nodes~n", [Bootstraps, Nodes]),
-    utils:print("~p bit for the hash and ~p millis for republishing~n~n", [K, T]),
+%   - EventsToListen: lists of events type to listen to during
+%                     the simulation
+start_simulation(Bootstraps, Nodes, K, T) ->
+    ?MODULE:start_simulation(Bootstraps, Nodes, K, T, []).
+start_simulation(Bootstraps, Nodes, K, T, EventsToListen) ->
+
+    ?MODULE:start_test_environment(K, T),
+    % Subscribing to finished_join_procedure 
+    % to listen for network convergence
+    analytics_collector:listen_for(finished_join_procedure),
+
+    % Subscribing to specified events
     lists:foreach(
-        fun(_) ->
-            node:start(K, T, true)
+        fun(EventType) ->
+            analytics_collector:listen_for(EventType)
         end,
-        lists:seq(1, Bootstraps)
+        EventsToListen    
     ),
-    lists:foreach(
-        fun(_) ->
-            node:start(K, T, false)
-        end,
-        lists:seq(1, Nodes)
-    ).
+
+    % Starting the network
+    ?MODULE:start_kademlia_network(Bootstraps, Nodes, K, T),
+
+    utils:print("Waiting for the network to converge~n"),
+    TotalNodes = Nodes + Bootstraps,
+    ?MODULE:wait_for_network_to_converge(TotalNodes),
+    ok.
+
+% This function starts the nodes that will join the kademlia network
+start_kademlia_network(Bootstraps, Nodes, K, T) ->
+
+    case whereis(analytics_collector) of
+        undefined ->
+            ?MODULE:start_test_environment(K, T),
+            CanStart = true;
+        _ -> 
+            utils:print("An existing enviroment has been found: "),
+            case analytics_collector:get_simulation_parameters() of
+                {ExistingK, _} ->
+                    if(ExistingK /= K) ->
+                        utils:print("~n[ERROR] -> Inconsistent K parameter. ~n"),
+                        utils:print("Can't start new nodes with a different K value.~n~n"),
+                        utils:print("(Existing) ~p =/= ~p (New K).~n", [ExistingK, K]),
+                        utils:print("Please ensure the parameter K is consistent.~n~n"),
+                        CanStart = false;
+                    true ->
+                        utils:print("adding nodes to the network.~n~n"),
+                        CanStart = true
+                    end;                    
+                _ -> CanStart = false
+            end
+    end,    
+
+    if CanStart ->
+        utils:print("Starting ~p bootstrap nodes and ~p other nodes~n", [Bootstraps, Nodes]),
+        utils:print("~p bit for the hash and ~p millis for republishing~n~n", [K, T]),
+        lists:foreach(
+            fun(_) ->
+                node:start(K, T, true)
+            end,
+            lists:seq(1, Bootstraps)
+        ),
+        lists:foreach(
+            fun(_) ->
+                node:start(K, T, false)
+            end,
+            lists:seq(1, Nodes)
+        );
+    true ->
+        ok
+    end
+    .
 
 % This function is used to destroy the simulation
 % It kills all the processes and the analytics_collector
@@ -121,23 +180,22 @@ destroy() ->
 % as soon as other processes realize the node is not
 % responding it is removed from the routing table
 test_dying_process() ->
-    ?MODULE:start_test_environment(),
     BootstrapNodes = 1,
     Nodes = 5,
     K = 1,
     T = 40000,
 
     utils:print_centered_rectangle(["Test dying process"]),
-    analytics_collector:listen_for(finished_join_procedure),
-    analytics_collector:listen_for(stored_value),
 
-    ?MODULE:start_kademlia_network(BootstrapNodes, Nodes, K, T),
+    ?MODULE:start_simulation(
+        BootstrapNodes, 
+        Nodes, 
+        K, 
+        T, 
+        [stored_value]
+    ),
     [BootstrapNode|_] = analytics_collector:get_bootstrap_list(),
-
-
-    utils:print("Waiting for the network to converge~n"),
-    TotalNodes = Nodes + BootstrapNodes,
-    ?MODULE:wait_for_network_to_converge(TotalNodes),
+    
     
     utils:print("~nRequiring routing table to the bootstrapnode[~p]...~n",[BootstrapNode]),
     {ok, RoutingTable} = node:get_routing_table(BootstrapNode),
@@ -164,20 +222,14 @@ test_dying_process() ->
 % the nodes join mean time during and after network
 % convergence
 test_join_mean_time() ->
-    ?MODULE:start_test_environment(),
     BootstrapNodes = 10,
     Nodes = 8000,
     K = 5,
     T = 4000,
 
     utils:print_centered_rectangle(["Test join mean time"]),
-    analytics_collector:listen_for(finished_join_procedure),
     StartMillis = erlang:monotonic_time(millisecond),
-    ?MODULE:start_kademlia_network(BootstrapNodes, Nodes, K, T),
-
-    utils:print("Waiting for the network to converge~n"),
-    TotalNodes = Nodes + BootstrapNodes,
-    ?MODULE:wait_for_network_to_converge(TotalNodes),
+    ?MODULE:start_simulation(BootstrapNodes, Nodes, K, T),
 
     EndMillis = erlang:monotonic_time(millisecond),
     Elapsed = EndMillis - StartMillis,
@@ -226,22 +278,20 @@ enter_processes_to_kill(Max) ->
     end.
 
 test_lookup_meantime() ->
-    ?MODULE:start_test_environment(),
     BootstrapNodes = 10,
     Nodes = 8000,
     K = 5,
     T = 3000000,
 
     utils:print_centered_rectangle(["Test lookup mean time"]),
-    analytics_collector:listen_for(finished_join_procedure),
-    analytics_collector:listen_for(finished_lookup),
-    analytics_collector:listen_for(stored_value),
 
-    ?MODULE:start_kademlia_network(BootstrapNodes, Nodes, K, T),
-
-    utils:print("Waiting for the network to converge~n"),
-    TotalNodes = Nodes + BootstrapNodes,
-    ?MODULE:wait_for_network_to_converge(TotalNodes),
+    ?MODULE:start_simulation(
+        BootstrapNodes, 
+        Nodes, 
+        K, 
+        T, 
+        [finished_lookup, stored_value]
+    ),
 
     utils:print("~nSaving 'foo' => 0 in the network...~n"),
     [BootstrapNode | _] = analytics_collector:get_bootstrap_list(),
@@ -285,19 +335,13 @@ test_lookup_meantime() ->
 .
 
 test_republisher() ->
-    ?MODULE:start_test_environment(),
     BootstrapNodes = 10,
     Nodes = 5000,
     K = 5,
     T = 5000,
 
     utils:print_centered_rectangle(["Test republisher"]),
-    analytics_collector:listen_for(finished_join_procedure),
-    analytics_collector:listen_for(stored_value),
-
-    ?MODULE:start_kademlia_network(BootstrapNodes, Nodes, K, T),
-    TotalNodes = Nodes + BootstrapNodes,
-    ?MODULE:wait_for_network_to_converge(TotalNodes),
+    ?MODULE:start_simulation(BootstrapNodes, Nodes, K, T, [stored_value]),
 
     [BootstrapNode | _] = analytics_collector:get_bootstrap_list(),
     utils:print("~nSaving 'foo' => 0 in the network with node ~p...~n", [BootstrapNode]),

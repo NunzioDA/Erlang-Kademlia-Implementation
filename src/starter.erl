@@ -55,6 +55,7 @@ choose_parameters() ->
     utils:print("2. 10 bootstrap - 4000 nodes~n"),
     utils:print("3.  5 bootstrap - 1000 nodes~n"),
     utils:print("4.  2 bootstrap -  500 nodes~n"),
+    utils:print("5.  1 bootstrap -  250 nodes~n"),
     Choice = io:get_line("Please enter the number of you choice: "),
     utils:print("~n"),
     case string:trim(Choice) of
@@ -63,6 +64,7 @@ choose_parameters() ->
         "2" -> {10, 4000, 5};
         "3" -> {5, 1000, 4};
         "4" -> {2, 500, 4};
+        "5" -> {1, 250, 4};
         TrimmedChoice -> 
             utils:print("Invalid choice: ~p~n", [TrimmedChoice]),
             ?MODULE:choose_parameters()
@@ -281,7 +283,7 @@ test_join_mean_time() ->
     analytics_collector:flush_filling_routing_table_events(),
     utils:print("~nStarting 5 new nodes to measure join time~n"),
 
-    NewNodes = 5,
+    NewNodes = 250,
     lists:foreach(
         fun(_) ->
             node:start(K, T, false)

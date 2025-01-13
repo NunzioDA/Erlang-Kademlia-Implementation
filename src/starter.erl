@@ -51,11 +51,14 @@ choose_parameters() ->
     utils:print("Please choose if you want to use a big network or a smaller one. ~n"),
     utils:print("1. Network with 8000 nodes and 10 bootstrap nodes~n"),
     utils:print("2. Network with 1000 nodes and 5 bootstrap nodes~n"),
+    utils:print("3. Network with 500 nodes and 2 bootstrap nodes~n"),
     Choice = io:get_line("Please enter the number of you choice: "),
     utils:print("~n"),
     case string:trim(Choice) of
+        % Returning network parameters
         "1" -> {10, 8000, 5};
         "2" -> {5, 1000, 4};
+        "3" -> {2, 500, 4};
         _ -> utils:print("Invalid choice~p~n", [Choice]),
             ?MODULE:choose_test()
     end.
@@ -258,12 +261,11 @@ test_join_mean_time() ->
     FillMeanTime = analytics_collector:filling_routing_table_mean_time(),
     utils:print("Mean time for processes to fill the routing table: ~pms~n",[FillMeanTime]),
 
-    [{FirstFinished,_,_} | _] = analytics_collector:get_finished_join_nodes(),
+    [{FirstFinished,_,_} | _] = analytics_collector:get_finished_filling_routing_table_nodes(),
     {ok,RoutingTable} = node:get_routing_table(FirstFinished),
 
     utils:print("~n~nRouting table of the first node (~p) that finished joining: ~n",[FirstFinished]),
     utils:print_routing_table(RoutingTable),
-
 
     analytics_collector:flush_join_events(),
     analytics_collector:flush_filling_routing_table_events(),

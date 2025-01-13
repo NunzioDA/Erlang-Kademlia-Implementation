@@ -8,7 +8,7 @@
 %
 %
 -module(routing_table_filler).
--export([start/3, fill_routing_table/3, fill_routing_table/4, join_procedure/6, pick_bootstrap/0, nearest_bootstrap/1]).
+-export([start/3, fill_routing_table/3, fill_routing_table/5, join_procedure/6, pick_bootstrap/0, nearest_bootstrap/1]).
 -export([check_deletion_message/3, check_for_empty_branches/3, deleted_node/0]).
 
 % This function starts the thread signaling the
@@ -57,7 +57,7 @@ check_deletion_message(RoutingTable, K, BucketSize) ->
 check_for_empty_branches(RoutingTable, K, BucketSize) ->
     EmptyBranches = utils:empty_branches(RoutingTable, K),
     if EmptyBranches -> 
-        ?MODULE:fill_routing_table(RoutingTable, K, BucketSize);
+        ?MODULE:fill_routing_table(RoutingTable, K, BucketSize, {ok, nearest_bootstrap}, true);
     true -> ok
     end.
 
@@ -69,7 +69,10 @@ pick_bootstrap() ->
     Length = length(BootstrapList),
 
     case length(BootstrapList) of
-        0 -> -1;
+        0 -> 
+            % Waiting for bootstrap nodes
+            timer:sleep(2),
+            ?MODULE:pick_bootstrap();
         Length ->                    
             Index = rand:uniform(Length),
             Bootstrap = lists:nth(Index, BootstrapList),
@@ -91,7 +94,10 @@ nearest_bootstrap(K) ->
     ),
 
     case length(BootstrapListFiltered) of
-        0 -> -1;
+        0 -> 
+            % Waiting for bootstrap nodes
+            timer:sleep(2),
+            ?MODULE:nearest_bootstrap(K);
         _ ->                    
             [{_,First}|_] = utils:sort_node_list(BootstrapListFiltered, com:my_hash_id(K)),
             First
@@ -101,8 +107,8 @@ nearest_bootstrap(K) ->
 % If at the end of the procedure there are still empty 
 % branches the procedure is restarted after 2000 millis.
 fill_routing_table(RoutingTable, K, K_Bucket_Size) ->
-    ?MODULE:fill_routing_table(RoutingTable, K, K_Bucket_Size, {ok, nearest_bootstrap}).
-fill_routing_table(RoutingTable, K, K_Bucket_Size, LastResult)->
+    ?MODULE:fill_routing_table(RoutingTable, K, K_Bucket_Size, {ok, nearest_bootstrap}, false).
+fill_routing_table(RoutingTable, K, K_Bucket_Size, LastResult, JoinTimeSignaled)->
     thread:check_verbose(),
     case LastResult of
         {ok, random_bootstrap} ->
@@ -110,24 +116,26 @@ fill_routing_table(RoutingTable, K, K_Bucket_Size, LastResult)->
         {ok, nearest_bootstrap} ->
             BootstrapPid = ?MODULE:nearest_bootstrap(K)
     end,
-    % utils:print("Joining node ~p~n", [BootstrapPid]),
-    if(is_pid(BootstrapPid)) ->
-        BootstrapHash = utils:k_hash(BootstrapPid, K),
-        EventId = analytics_collector:started_join_procedure(),
-        Result = ?MODULE:join_procedure([{BootstrapHash, BootstrapPid}], RoutingTable, K, K_Bucket_Size, [], []),
-        analytics_collector:finished_join_procedure(EventId),
+    BootstrapHash = utils:k_hash(BootstrapPid, K),
         
-        % Restart join procedure if there are empty branches
-        EmptyBranches = utils:empty_branches(RoutingTable, K),
-        if EmptyBranches ->
-            ?MODULE:fill_routing_table(RoutingTable, K, K_Bucket_Size, Result);
-        true -> 
-            ok
-        end;
+    case JoinTimeSignaled of
+        true->
+            EventId = analytics_collector:started_join_procedure(),
+            Result = ?MODULE:join_procedure([{BootstrapHash, BootstrapPid}], RoutingTable, K, K_Bucket_Size, [], []),
+            analytics_collector:finished_join_procedure(EventId);
+        false ->
+            Result = ?MODULE:join_procedure([{BootstrapHash, BootstrapPid}], RoutingTable, K, K_Bucket_Size, [], [])
+    end,
+
+
+    EmptyBranches = utils:empty_branches(RoutingTable, K),
+    if EmptyBranches ->
+        ?MODULE:fill_routing_table(RoutingTable, K, K_Bucket_Size, Result, true);
     true -> 
-        ?MODULE:fill_routing_table(RoutingTable, K, K_Bucket_Size, {ok, random_bootstrap})
+        ok
     end
 .
+
 
 % The join procedure allows the node to join the network by contacting other nodes
 % and exchanging routing data to fill its routing table.

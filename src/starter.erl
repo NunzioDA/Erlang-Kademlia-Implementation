@@ -48,7 +48,7 @@ choose_test() ->
 % between the test with a large number of node 
 % or a smaller network
 choose_parameters() ->
-    utils:print("Please choose if you want to use a big network or a smaller one. ~n"),
+    utils:print("Please choose wich network you want to use. ~n"),
     utils:print("1. Network with 8000 nodes and 10 bootstrap nodes~n"),
     utils:print("2. Network with 1000 nodes and 5 bootstrap nodes~n"),
     utils:print("3. Network with 500 nodes and 2 bootstrap nodes~n"),

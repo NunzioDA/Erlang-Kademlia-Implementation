@@ -350,9 +350,9 @@ get_events(EventType) ->
 % It generates a unique integer that will be used to associate 
 % start events with finish events.
 started_time_based_event(Event) ->
-	UniqueInteger = erlang:unique_integer([positive]),
-	?MODULE:add(Event, UniqueInteger),
-	UniqueInteger.
+	EventId = erlang:unique_integer([positive]),
+	?MODULE:add(Event, EventId),
+	EventId.
 
 % This function is used to signal the end of a time based event.
 % It requires the EventId that is the unique integer generated in

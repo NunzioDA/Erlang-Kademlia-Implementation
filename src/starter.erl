@@ -281,9 +281,9 @@ test_join_mean_time() ->
 
     analytics_collector:flush_join_events(),
     analytics_collector:flush_filling_routing_table_events(),
-    utils:print("~nStarting 5 new nodes to measure join time~n"),
-
     NewNodes = 250,
+    utils:print("~nStarting ~p new nodes to measure join time~n", [NewNodes]),
+
     lists:foreach(
         fun(_) ->
             node:start(K, T, false)

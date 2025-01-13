@@ -51,18 +51,21 @@ choose_test() ->
 % or a smaller network
 choose_parameters() ->
     utils:print("Please choose which network you want to use. ~n"),
-    utils:print("1. Network with 8000 nodes and 10 bootstrap nodes~n"),
-    utils:print("2. Network with 1000 nodes and 5 bootstrap nodes~n"),
-    utils:print("3. Network with 500 nodes and 2 bootstrap nodes~n"),
+    utils:print("1. 10 bootstrap - 8000 nodes~n"),
+    utils:print("2. 10 bootstrap - 4000 nodes~n"),
+    utils:print("3.  5 bootstrap - 1000 nodes~n"),
+    utils:print("4.  2 bootstrap -  500 nodes~n"),
     Choice = io:get_line("Please enter the number of you choice: "),
     utils:print("~n"),
     case string:trim(Choice) of
         % Returning network parameters
         "1" -> {10, 8000, 5};
-        "2" -> {5, 1000, 4};
-        "3" -> {2, 500, 4};
-        TrimmedChoice -> utils:print("Invalid choice: ~p~n", [TrimmedChoice]),
-            ?MODULE:choose_test()
+        "2" -> {10, 4000, 5};
+        "3" -> {5, 1000, 4};
+        "4" -> {2, 500, 4};
+        TrimmedChoice -> 
+            utils:print("Invalid choice: ~p~n", [TrimmedChoice]),
+            ?MODULE:choose_parameters()
     end
 .
 

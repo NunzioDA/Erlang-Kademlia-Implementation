@@ -59,7 +59,7 @@ choose_parameters() ->
         "1" -> {10, 8000, 5};
         "2" -> {5, 1000, 4};
         "3" -> {2, 500, 4};
-        _ -> utils:print("Invalid choice~p~n", [Choice]),
+        TrimmedChoice -> utils:print("Invalid choice: ~p~n", [TrimmedChoice]),
             ?MODULE:choose_test()
     end.
 

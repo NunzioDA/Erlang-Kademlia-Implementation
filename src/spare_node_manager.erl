@@ -19,12 +19,14 @@ start(RoutingTable, K)->
     Pid = ?MODULE:start_link(ParentAddress,Verbose, RoutingTable, K),
     thread:save_thread(Pid),
     thread:save_named(spare_node_manager, Pid),
-    Pid.
+    Pid
+.
 
 % starting gen server
 start_link(ParentAddress, Verbose, RoutingTable, K) ->
     {ok, Pid} = gen_server:start_link(?MODULE, [ParentAddress, Verbose, RoutingTable, K], []),
-    Pid.
+    Pid
+.
 
 % delegate the node to the spare_node_manager
 delegate(Pid)->
@@ -34,22 +36,26 @@ delegate(Pid)->
         gen_server:cast(ServerPid, {check, Pid});
     true ->
         utils:print("Start a spare node manager before delegating pids")
-    end.
+    end
+.
 
 % Initializing gen_server
 init([ParentAddress, Verbose, RoutingTable, K]) ->
     utils:set_verbose(Verbose),
     com:save_address(ParentAddress),
     LastUpdatedBranch = -1,
-    {ok, {RoutingTable, K, LastUpdatedBranch}}.
+    {ok, {RoutingTable, K, LastUpdatedBranch}}
+.
 
 handle_call(_Request, _From, State) ->
-    {reply, ok, State}.
+    {reply, ok, State}
+.
 
 % This function is used to append a node to al 
 append_node(RoutingTable, Tail, NodeHashId, NodePid, BranchID) ->
     UpdatedNodeList = Tail ++ [{NodeHashId, NodePid}], 
-    ets:insert(RoutingTable, {BranchID, UpdatedNodeList}).
+    ets:insert(RoutingTable, {BranchID, UpdatedNodeList})
+.
 
 % Handling the spare node
 handle_cast({check, NodePid}, State) ->
@@ -89,9 +95,11 @@ handle_cast({check, NodePid}, State) ->
     true -> 
         NewLastUpdatedBranch = LastUpdatedBranch
     end,
-    {noreply, {RoutingTable,K,NewLastUpdatedBranch}}.
+    {noreply, {RoutingTable,K,NewLastUpdatedBranch}}
+.
 
 % Handling thread verbosity messages
 handle_info({verbose, Verbose}, State)->
     utils:set_verbose(Verbose),
-    {noreply, State}.
+    {noreply, State}
+.

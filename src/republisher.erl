@@ -10,7 +10,7 @@
 -export([start/4, add_pair/2, republish_behaviour/6, check_for_new_pairs/4]).
 
 % The republisher thread is started executing the
-% republish_behaviour
+% republish_behaviour.
 start(RoutingTable, K, T, BucketSize) ->
     Pid = thread:start(
         fun()->
@@ -31,7 +31,8 @@ add_pair(Key, Value) ->
     case thread:get_named(republisher_pid) of
         undefined -> utils:print("Start a republisher before adding pairs");
         Pid -> Pid ! {new_pair, Key, Value}
-    end.
+    end
+.
 
 % Check for new pairs to add to the value table
 % and distribute them to the network.
@@ -45,7 +46,8 @@ check_for_new_pairs(ValuesTable, RoutingTable, K, BucketSize) ->
             NewMap
     after 10 -> % This has to be 10 ms to avoid blocking the network
         ValuesTable
-    end.
+    end
+.
 
 % Every T seconds the republisher takes the ValuesMap and foreach 
 % value it starts a store procedure

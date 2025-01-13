@@ -34,7 +34,9 @@ start(K, T) ->
     	?MODULE:start_server(K,T);
 	true ->
 		{warning, "An instance of analytics_collector is already running."}
-	end.
+	end
+.
+
 % This functions starts a gen_server process
 start_server(K, T) ->
     {ok, Pid} = gen_server:start(?MODULE, [K, T], []),
@@ -55,11 +57,13 @@ start_server(K, T) ->
 % This function is used to enroll a process as 
 % a bootstrap node
 enroll_bootstrap() ->
-	?MODULE:add(bootstrap, 1).
+	?MODULE:add(bootstrap, 1)
+.
 % This functin is used to enrol a process as 
 % a node
 enroll_node()->
-	?MODULE:add(node, 1).
+	?MODULE:add(node, 1)
+.
 
 %--------------------------------------------
 % Join
@@ -67,12 +71,14 @@ enroll_node()->
 % This function is used to signal that a process started
 % the join_procedure
 started_join_procedure() ->
-	?MODULE:started_time_based_event(started_join_procedure).
+	?MODULE:started_time_based_event(started_join_procedure)
+.
 
 % This function is used to signal that a process finished
 % the join_procedure
 finished_join_procedure(EventId) ->
-	?MODULE:finished_time_based_event(finished_join_procedure, EventId).
+	?MODULE:finished_time_based_event(finished_join_procedure, EventId)
+.
 
 %--------------------------------------------
 % Fill routing table
@@ -80,12 +86,14 @@ finished_join_procedure(EventId) ->
 % This function is used to signal that a process started
 % the filling_routing_table procedure
 started_filling_routing_table() ->
-	?MODULE:started_time_based_event(started_filling_routing_table).
+	?MODULE:started_time_based_event(started_filling_routing_table)
+.
 
 % This function is used to signal that a process finished
 % the filling_routing_table procedure
 finished_filling_routing_table(EventId) ->
-	?MODULE:finished_time_based_event(finished_filling_routing_table, EventId).
+	?MODULE:finished_time_based_event(finished_filling_routing_table, EventId)
+.
 
 %--------------------------------------------
 % Lookup
@@ -93,12 +101,14 @@ finished_filling_routing_table(EventId) ->
 % This function is used to signal that a process started
 % the lookup procedure
 started_lookup() ->
-	?MODULE:started_time_based_event(started_lookup).
+	?MODULE:started_time_based_event(started_lookup)
+.
 
 % This function is used to signal that a process finished
 % the lookup procedure
 finished_lookup(EventId) ->
-	?MODULE:finished_time_based_event(finished_lookup, EventId).
+	?MODULE:finished_time_based_event(finished_lookup, EventId)
+.
 
 %--------------------------------------------
 % Distribute
@@ -106,12 +116,14 @@ finished_lookup(EventId) ->
 % This function is used to signal that a process started
 % the distribution procedure
 started_distribute() ->
-	?MODULE:started_time_based_event(started_distribute).
+	?MODULE:started_time_based_event(started_distribute)
+.
 
 % This function is used to signal that a process finished
 % the distribution procedure
 finished_distribute(EventId) ->
-	?MODULE:finished_time_based_event(finished_distribute, EventId).
+	?MODULE:finished_time_based_event(finished_distribute, EventId)
+.
 
 %--------------------------------------------
 % Store
@@ -119,9 +131,9 @@ finished_distribute(EventId) ->
 % This function is used to signal a node saved the value 
 % relative to a specific key
 stored_value(Key) ->
-	UniqueInteger = erlang:unique_integer([positive]),
-	?MODULE:add(stored_value, {UniqueInteger, Key}).
-
+	EventId = erlang:unique_integer([positive]),
+	?MODULE:add(stored_value, {EventId, Key})
+.
 
 %------------------------------------
 % Results management
@@ -133,7 +145,9 @@ stored_value(Key) ->
 % This function is used to compute the join_procedure
 % mean time based on the signaled events
 join_procedure_mean_time() ->
-	?MODULE:time_based_event_mean_time(started_join_procedure, finished_join_procedure).
+	?MODULE:time_based_event_mean_time(started_join_procedure, finished_join_procedure)
+.
+
 % This function return all the processes that haven't finished the
 % join procedure
 get_unfinished_join_nodes()->
@@ -141,22 +155,26 @@ get_unfinished_join_nodes()->
 	FinishedTimes = ?MODULE:get_events(finished_join_procedure),
 
 	FilteredStartedTimes = [Pid || {Pid, _, _} <- StartedTimes, not lists:keymember(Pid, 1, FinishedTimes)],
-	FilteredStartedTimes.
+	FilteredStartedTimes
+.
 
 % This function returns all the processes that have
 % started the join procedure
 get_started_join_nodes() ->
-	?MODULE:get_events(started_join_procedure).
+	?MODULE:get_events(started_join_procedure)
+.
 
 % This function returns all the processes that have
 % finished the join procedure
 get_finished_join_nodes() ->
-	?MODULE:get_events(finished_join_procedure).
+	?MODULE:get_events(finished_join_procedure)
+.
 
 % This function flushes the join procedure results
 flush_join_events() ->
 	?MODULE:empty_event_list(started_join_procedure),
-	?MODULE:empty_event_list(finished_join_procedure).
+	?MODULE:empty_event_list(finished_join_procedure)
+.
 
 %--------------------------------------------
 % Fill routing table
@@ -164,17 +182,20 @@ flush_join_events() ->
 % This function is used to compute the filling_routing_table
 % mean time based on the signaled events
 filling_routing_table_mean_time() ->
-	?MODULE:time_based_event_mean_time(started_filling_routing_table, finished_filling_routing_table).
+	?MODULE:time_based_event_mean_time(started_filling_routing_table, finished_filling_routing_table)
+.
 
 % This function returns all the processes that have
 % started the filling_routing_table procedure
 get_started_filling_routing_table_nodes() ->
-	?MODULE:get_events(started_filling_routing_table).
+	?MODULE:get_events(started_filling_routing_table)
+.
 
 % This function returns all the processes that have
 % finished the filling_routing_table procedure
 get_finished_filling_routing_table_nodes() ->
-	?MODULE:get_events(finished_filling_routing_table).
+	?MODULE:get_events(finished_filling_routing_table)
+.
 
 % This function return all the processes that haven't finished
 % filling their routing table
@@ -183,33 +204,40 @@ get_unfinished_filling_routing_table_nodes()->
 	FinishedTimes = ?MODULE:get_events(finished_filling_routing_table),
 
 	FilteredStartedTimes = [Pid || {Pid, _, _} <- StartedTimes, not lists:keymember(Pid, 1, FinishedTimes)],
-	FilteredStartedTimes.
+	FilteredStartedTimes
+.
 
 % This function flushes the fill routing table procedure results
 flush_filling_routing_table_events() ->
 	?MODULE:empty_event_list(started_filling_routing_table),
-	?MODULE:empty_event_list(finished_filling_routing_table).
+	?MODULE:empty_event_list(finished_filling_routing_table)
+.
 
 %--------------------------------------------
 % Lookup
 %
 % This function computes the lookup mean time
 lookup_mean_time() ->
-	?MODULE:time_based_event_mean_time(started_lookup, finished_lookup).
+	?MODULE:time_based_event_mean_time(started_lookup, finished_lookup)
+.
+
 % This function returns all the processes that have
 % started the lookup procedure
 get_started_lookup() ->
-	?MODULE:get_events(started_lookup).
+	?MODULE:get_events(started_lookup)
+.
 
 % This function returns all the processes that have
 % finished the lookup procedure
 get_finished_lookup() ->
-	?MODULE:get_events(finished_lookup).
+	?MODULE:get_events(finished_lookup)
+.
 
 % This function flushes the lookup procedure results
 flush_lookups_events() ->
 	?MODULE:empty_event_list(started_lookup),
-	?MODULE:empty_event_list(finished_lookup).
+	?MODULE:empty_event_list(finished_lookup)
+.
 
 %--------------------------------------------
 % Distribute
@@ -217,19 +245,22 @@ flush_lookups_events() ->
 % This function returns all the processes that have
 % started the lookup procedure
 get_started_distribute() ->
-	?MODULE:get_events(started_distribute).
+	?MODULE:get_events(started_distribute)
+.
 
 % This function returns all the processes that have
 % finished the lookup procedure
 get_finished_distribute() ->
-	?MODULE:get_events(finished_distribute).
+	?MODULE:get_events(finished_distribute)
+.
 
 % This function flushes the lookup procedure results
 flush_distribute_events() ->
 	?MODULE:empty_event_list(started_distribute),
-	?MODULE:empty_event_list(finished_distribute).
+	?MODULE:empty_event_list(finished_distribute)
+.
 
-% This function is used to 
+% This function is used to compute the mean time of the distribution procedure. 
 distribute_mean_time() ->
 	time_based_event_mean_time(started_distribute,finished_distribute).
 
@@ -245,7 +276,8 @@ get_bootstrap_list() ->
 		end,
 		[],
 		?MODULE:get_events(bootstrap)
-	).
+	)
+.
 
 % This function returns all the processes that have
 % enrolled as nodes
@@ -256,7 +288,8 @@ get_node_list() ->
 		end,
 		[],
 		?MODULE:get_events(node)
-	).
+	)
+.
 
 %--------------------------------------------
 % Store
@@ -267,11 +300,13 @@ get_nodes_that_stored(Key) ->
 	StoreEvents = ?MODULE:get_events(stored_value),
 	KeyStoreEvents = [Pid || {Pid,{_,SavedKey}, _} <- StoreEvents, SavedKey == Key],
 	NoDuplicate = utils:remove_duplicates(KeyStoreEvents),
-	NoDuplicate.
+	NoDuplicate
+.
 
 % This function flushes the stored_value events
 flush_nodes_that_stored() ->
-	?MODULE:empty_event_list(stored_value).
+	?MODULE:empty_event_list(stored_value)
+.
 
 % This function is used to compute the mean time based on two
 % lists, the start times and the end times.
@@ -310,7 +345,8 @@ calculate_mean_time(StartedTimes, FinishedTimes) ->
 	case Count of
 		0 -> 0;
 		_ -> TotalTime div Count
-	end.
+	end
+.
 
 
 % ------------------------------------------
@@ -323,7 +359,8 @@ calculate_mean_time(StartedTimes, FinishedTimes) ->
 listen_for(EventType) ->
 	Pid = self(),
 	ServerPid = whereis(analytics_collector),
-	gen_server:cast(ServerPid, {new_listener, Pid, EventType}).
+	gen_server:cast(ServerPid, {new_listener, Pid, EventType})
+.
 
 
 % -------------------------------------------	
@@ -331,12 +368,13 @@ listen_for(EventType) ->
 % -------------------------------------------
 
 get_simulation_parameters() ->
-	?MODULE:make_request(call, {get_simulation_parameters}).
+	?MODULE:make_request(call, {get_simulation_parameters})
+.
 
 % This function is the generic function used to add new events.
-add(EventType, Event) ->
+add(EventType, EventValue) ->
 	ClientPid = com:my_address(),
-	?MODULE:make_request(cast, {new_event, ClientPid, EventType, Event})
+	?MODULE:make_request(cast, {new_event, ClientPid, EventType, EventValue})
 .
 
 % This function is used to get the events list of a given type.
@@ -344,21 +382,24 @@ get_events(EventType) ->
 	case ets:lookup(analytics, EventType) of
 		[{_, List}] -> List;
 		_ -> []
-	end.
+	end
+.
 
 % This function is used to signal the start of a time based event.
 % It generates a unique integer that will be used to associate 
 % start events with finish events.
-started_time_based_event(Event) ->
+started_time_based_event(EventType) ->
 	EventId = erlang:unique_integer([positive]),
-	?MODULE:add(Event, EventId),
-	EventId.
+	?MODULE:add(EventType, EventId),
+	EventId
+.
 
 % This function is used to signal the end of a time based event.
 % It requires the EventId that is the unique integer generated in
 % started_time_based_event
-finished_time_based_event(Event, EventId) ->
-	?MODULE:add(Event, EventId).	
+finished_time_based_event(EventType, EventId) ->
+	?MODULE:add(EventType, EventId)
+.	
 
 % This function is used to compute time based event
 % mean time using calculate_mean_time
@@ -367,10 +408,11 @@ time_based_event_mean_time(Started,Finished) ->
 	FinishedTimes = ?MODULE:get_events(Finished),
 
 	MeanTime = ?MODULE:calculate_mean_time(StartedTimes, FinishedTimes),
-	MeanTime.
+	MeanTime
+.
 
 % This function is used to notify enrolled event listeners
-notify_listeners(EventType, Event, ListenersMap) ->
+notify_listeners(EventType, EventValue, ListenersMap) ->
 	case ListenersMap of
 		undefined -> 
 			ok;
@@ -380,13 +422,14 @@ notify_listeners(EventType, Event, ListenersMap) ->
 					EventListeners = maps:get(EventType, ListenersMap),
 					lists:foreach(
 						fun(Pid) ->
-							Pid ! {event_notification, EventType, Event}
+							Pid ! {event_notification, EventType, EventValue}
 						end,
 						EventListeners
 					);
 				false -> ok
 			end
-	end.
+	end
+.
 
 % This function allows to make a request to the analytics server
 % analytics server must be started before making requests
@@ -401,6 +444,7 @@ make_request(Type, Request) ->
 		end
 	end
 .
+
 % This function is called to initialize the gen_server.
 % It registers the analytics_collector Pid and creates the analytics ets to
 % collect data.
@@ -408,11 +452,13 @@ init([K, T]) ->
 	register(analytics_collector, self()),
 	ets:new(analytics, [set, public, named_table]),
 	ListenersMap = #{},
-	{ok, {K, T, ListenersMap}}.
+	{ok, {K, T, ListenersMap}}
+.
 
 handle_call({get_simulation_parameters}, _From, State) ->
 	{K,T,_} = State,
-	{reply, {K,T}, State}.
+	{reply, {K,T}, State}
+.
 
 % This clause handle the registration of a generic event
 handle_cast({new_event, Pid, EventType, Event}, State) ->
@@ -435,16 +481,18 @@ handle_cast({new_listener, Pid, EventType}, State) ->
 		end,
 		NewListenersMap = maps:put(EventType, NewEventListeners, ListenersMap)
 	end,
-	{noreply, {K,T,NewListenersMap}}.
+	{noreply, {K,T,NewListenersMap}}
+.
 
 empty_event_list(EventType) ->
-	ets:insert(analytics, {EventType, []}).
+	ets:insert(analytics, {EventType, []})
+.
 
 % This function saves the event to the ets table
 % named analytics.
-register_new_event(Pid, EventType, Event, ListenersMap) ->
+register_new_event(Pid, EventType, EventValue, ListenersMap) ->
 	Millis = erlang:monotonic_time(millisecond),
-	NewRecord = {Pid, Event, Millis},
+	NewRecord = {Pid, EventValue, Millis},
 	case ets:lookup(analytics, EventType) of
 		[{_,EventList}] ->
 			NewEventList = EventList ++ [NewRecord],
@@ -463,4 +511,5 @@ kill() ->
 		Pid -> 
 			exit(Pid, kill),
 			ets:delete(analytics)
-	end.
+	end
+.

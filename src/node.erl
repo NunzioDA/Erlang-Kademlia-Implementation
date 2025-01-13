@@ -13,44 +13,52 @@
 -export([save_node/4, branch_lookup/2, find_node/7, find_node/4, get_value/3, request_handler/3, delete_node/3]).
 -export([async_request_handler/2, find_k_nearest_node/6, lookup_for_value/5, find_k_nearest_node/4, send_ping/2]).
 
+
+%-------------------------------------------------------
+% INIZIALIZATION FUNCTIONS
+%
+% These function are used to start a new node in the
+% Kademlia network and initialize its state.
+%------------------------------------------------------
+
 % Starts a new node in the Kademlia network.
 % K -> Number of bits to represent a node ID.
 % T -> Time interval for republishing data.
-% Returns the process identifier (PID) of the newly created node.
 start(K, T, InitAsBootstrap) ->
     ?MODULE:start(K, T, InitAsBootstrap, false).
 
 start(K, T, InitAsBootstrap, Verbose) ->
     Pid = ?MODULE:start_server(K, T, InitAsBootstrap, Verbose),
-    Pid.
+    Pid
+.
 
 % Starts the node process.
-% gen_server:start/3 calls init/1, who takes in input [K, T].
 start_server(K, T, InitAsBootstrap, Verbose) ->
     {ok, Pid} = gen_server:start(?MODULE, [K, T, InitAsBootstrap, Verbose], []),
-    Pid.
+    Pid
+.
 
 % Initializes the state of the node when it is created.
-% Creates one ETS table and a map:
+% Creates two ETS tables:
 % - RoutingTable: Used to store the routing information of the node.
-% - ValuesMap: Used to store key-value pairs managed by the node.
+% - ValuesTable: Used to store key-value pairs managed by the node.
 init([K, T, InitAsBootstrap, Verbose]) ->
     % Trapping exit so we can catch exit messages
     process_flag(trap_exit, true),
-    
+
     utils:set_verbose(Verbose),
     % Generate a unique integer to create distinct ETS table names for each node.
     UniqueInteger = integer_to_list(erlang:unique_integer([positive])),    
     % Create unique table name for routing by appending the unique integer.
-    RoutingName = list_to_atom("routing_table" ++ UniqueInteger),
-    ValuesMapName = list_to_atom("values_table" ++ UniqueInteger),
+    RoutingTableName = list_to_atom("routing_table" ++ UniqueInteger),
+    ValuesTableName = list_to_atom("values_table" ++ UniqueInteger),
     % Initialize ETS table with the specified properties.
-    RoutingTable = ets:new(RoutingName, [set, public]),
+    RoutingTable = ets:new(RoutingTableName, [set, public]),
     % Initialize ValuesTable as an empty map.
-    ValuesTable = ets:new(ValuesMapName, [set, public]),
+    ValuesTable = ets:new(ValuesTableName, [set, public]),
     % Define the bucket size for routing table entries.
     Bucket_Size = 20,
-
+    % Starting the threads of the node.
     spare_node_manager:start(RoutingTable, K),
     republisher:start(RoutingTable, K, T, Bucket_Size),
     analytics_collector:enroll_node(),
@@ -59,11 +67,11 @@ init([K, T, InitAsBootstrap, Verbose]) ->
         analytics_collector:enroll_bootstrap();
     true -> ok
     end,
-    
     routing_table_filler:start(K,RoutingTable,Bucket_Size),
 
     % Return the initialized state, containing ETS tables and configuration parameters.
-    {ok, {RoutingTable, ValuesTable, K, T, Bucket_Size}}.
+    {ok, {RoutingTable, ValuesTable, K, T, Bucket_Size}}
+.
 
 %-------------------------------------------------------
 % SHELL COMMANDS
@@ -72,52 +80,62 @@ init([K, T, InitAsBootstrap, Verbose]) ->
 % to tell a specific node what to do.
 % All the functions are used for debugging purposes.
 %------------------------------------------------------
-%
-% This function is used for debugging purposess
+
+% This function is used for debugging purposes
 % allowing to print the routing table in the shell
-% sending a routing_table request to the given Pid
+% by sending a routing_table request to the given Pid
 get_routing_table(NodePid) when is_pid(NodePid)->
     try
         gen_server:call(NodePid, {routing_table}, 120000)
     catch 
         Err -> utils:debug_print("~p",[Err])
-    end.
+    end
+.
+
 % This function is used to make the node start the store
-% procedure, contacting the nearest node to the value
+% procedure, contacting the nearest node to the value.
 distribute(NodePid, Key, Value) when is_pid(NodePid)->
-    com:send_async_request(NodePid, {distribute_value, Key, Value}).
+    com:send_async_request(NodePid, {distribute_value, Key, Value})
+.
 
 % This function is used to make the node start the lookup
-% procedure, contacting the nearest node to the value
+% procedure, contacting the nearest node to the value.
 lookup(NodePid, Key) when is_pid(NodePid) ->
-    ?MODULE:lookup(NodePid, Key, true).
+    ?MODULE:lookup(NodePid, Key, true)
+.
 lookup(NodePid, Key, Verbose) when is_pid(NodePid) ->
-    com:send_request(NodePid, {shell_lookup, Key, Verbose}).
+    com:send_request(NodePid, {shell_lookup, Key, Verbose})
+.
 
-% This function is used to change the node verbosity to true
+% This function is used to change the node verbosity to true.
 talk(NodePid) when is_pid(NodePid)->
-    com:send_async_request(NodePid, {talk}).
+    com:send_async_request(NodePid, {talk})
+.
 
-% This function is used to change the node verbosity to false
+% This function is used to change the node verbosity to false.
 shut(NodePid) when is_pid(NodePid) ->
-    com:send_async_request(NodePid, {shut}).
+    com:send_async_request(NodePid, {shut})
+.
 
 % This function is used from the shell
 % to start a procedure to find the K nearest nodes
 % to a given hash id
 shell_find_nearest_nodes(NodePid, HashId) ->
-    com:send_request(NodePid, {shell_find_nearest_nodes, HashId}).
+    com:send_request(NodePid, {shell_find_nearest_nodes, HashId})
+.
 
 % This function is used from the shell 
 % to tell a node to send a ping to another node
 send_ping(NodePid,ToNodePid) when is_pid(NodePid) ->
-    com:send_request(NodePid, {send_ping, ToNodePid}).
+    com:send_request(NodePid, {send_ping, ToNodePid})
+.
 
-% This command is used to kill a process
+% This command is used to kill a process.
 kill(Pid) when is_pid(Pid) ->
-    % Unlinking so the parent is not killed
+    % Unlinking so the parent is not killed.
     unlink(Pid),
-    exit(Pid, kill).
+    exit(Pid, kill)
+.
 
 % Pings a specific node (NodePid) to check its availability.
 ping(NodePid) when is_pid(NodePid) ->
@@ -127,15 +145,16 @@ ping(NodePid) when is_pid(NodePid) ->
         % If the node is unreachable, the function returns pang.
         {error, Reason} -> 
             {pang, Reason}
-    end.
+    end
+.
 
 % ----------------------------------------------------------------------------
-%   ROUTING TABLE MANAGEMENT 
+%  ROUTING TABLE MANAGEMENT 
+%
+%  The following functions are used to manage and update the routing table of a node.
 % ----------------------------------------------------------------------------
 
-% NodePid: The process identifier of the node to be saved. It is used to contact the node.
-% RoutingTable: the table where store the information.
-% K: The number of bits used for the node's hash_id representation.
+% This function allows to save a node in the routing table.
 save_node(NodePid, RoutingTable, K, K_Bucket_Size) when is_pid(NodePid) ->
     MyAddress = com:my_address(),
     ShellPid = whereis(shellPid),
@@ -182,7 +201,8 @@ save_node(NodePid, RoutingTable, K, K_Bucket_Size) when is_pid(NodePid) ->
                 end
         end;
     true -> ok
-    end.
+    end
+.
 
 % This function delete a node from the routing table
 delete_node(NodePid, RoutingTable, K) when is_pid(NodePid)->
@@ -201,7 +221,8 @@ delete_node(NodePid, RoutingTable, K) when is_pid(NodePid)->
             end;
 
         [] -> ok
-    end.
+    end
+.
 
 % This function is used to lookup for the nodes list in a branch.
 branch_lookup(RoutingTable, BranchId) ->
@@ -210,13 +231,12 @@ branch_lookup(RoutingTable, BranchId) ->
         [{BranchId, NodeList}] -> NodeList;
         % Return an empty list if BranchId is not found.
         [] -> [] 
-    end.
+    end
+.
 
 % This function is used to lookup for the K closest nodes starting from a branch in local.
 % After checking the current branch, the function checks the branches on the left and on the right
 % till it finds K nodes or the end of the routing table.
-% HashId is the target hash ID for which we are looking for the closest nodes.
-% The function returns a list containing the K closest nodes to HashId.
 find_node(RoutingTable, K_Bucket_Size, K, HashId) ->
     BranchID = utils:get_subtree_index(HashId, com:my_hash_id(K)),
     % Start the recursive lookup from the initial state: 0 nodes found, initial index I = 0.
@@ -273,8 +293,11 @@ find_node(RoutingTable, NodesCount, K_Bucket_Size, BranchID, K, HashId, I)
 find_node(_, NodesCount, K_Bucket_Size, BranchID, K, _, I) 
     when NodesCount >= K_Bucket_Size orelse BranchID + I > K, BranchID - I < 0  ->
         % Return an empty list or result indicating no more nodes needed. 
-        [].
+        []
+.
 
+% This function is used to get the value associated with a given key from the 
+% local valuesTable.
 get_value(Key, K, ValuesTable) ->
     KeyHash = utils:k_hash(Key, K),
     case ets:lookup(ValuesTable, KeyHash) of
@@ -288,7 +311,8 @@ get_value(Key, K, ValuesTable) ->
             end;
         [] ->
             {no_value, empty}
-    end.
+    end
+.
 
 %-----------------------------------------------------------------------------------
 % SYNCHRONOUS REQUESTS MANAGEMENT 
@@ -308,17 +332,17 @@ handle_call({Request, SenderPid}, _, State) ->
     utils:debug_print("Handling ~p ~p~n", [Request, SenderPid]),
     {RoutingTable, _, K, _, BucketSize} = State,
     ?MODULE:save_node(SenderPid,RoutingTable,K,BucketSize),
-    ?MODULE:request_handler(Request, SenderPid, State).
+    ?MODULE:request_handler(Request, SenderPid, State)
+.
 
 % Handles a request to find the closest nodes to a given HashID.
-% HashID: The identifier of the target node.
-% State: The current state of the node, including the routing table.
 request_handler({find_node, HashID}, _From, State) ->
     {RoutingTable, _, K, _, Bucket_Size} = State,
     % Look up the closest K nodes within the routing table.
     NodeList = ?MODULE:find_node(RoutingTable, Bucket_Size, K, HashID),
     % Reply to the caller with the list of closest nodes and the current state.
     {reply, {ok, NodeList}, State};
+% Same as find_node, but returns the value if the recipient has it.
 request_handler({find_value, Key}, _From, State) ->
     {RoutingTable, ValuesTable, K, _, Bucket_Size} = State,
 
@@ -359,7 +383,7 @@ request_handler({fill_my_routing_table, FilledIndexes}, ClientPid, State) ->
     % has the hash 1010 they share the first two bits.
     % Their routing table will share the buckets containing
     % the nodes starting with 0--- and all the nodes starting
-    % with 10--.
+    % with 11.
     % So those buckets will be passed entirely making the
     % join procedure more efficent.
     Branches = lists:foldl(
@@ -404,12 +428,12 @@ request_handler(ping, _, State) ->
     % Reply with pong to indicate that the node is alive and reachable.
     {reply, {pong, ok}, State};
 % This request is used from the shell
-% to tell a node to send a ping to another node
+% to tell a node to send a ping to another node.
 request_handler({send_ping, ToNodePid}, _, State) ->
     Result = ?MODULE:ping(ToNodePid),
     {reply, Result, State};
 % This function is used to find a value in the network 
-% from the shell
+% from the shell.
 request_handler({shell_lookup, Key, Verbose}, _, State) ->
     {RoutingTable,_,K,_,_} = State,
     thread:start(
@@ -431,6 +455,7 @@ request_handler({shell_lookup, Key, Verbose}, _, State) ->
         end   
     ),
     {reply, ok, State};
+% This request is used from the shell to find the K nearest nodes to a given hash id.
 request_handler({shell_find_nearest_nodes, HashId},_,State) ->
     {RoutingTable, _, K, _, BucketSize} = State,
     Result = ?MODULE:find_k_nearest_node(RoutingTable, HashId, BucketSize, K),
@@ -442,7 +467,9 @@ request_handler(_, _, State) ->
 % ---------------------------------------------------------------- 
 % ASYNCHRONOUS REQUESTS MANAGEMENT
 % ---------------------------------------------------------------- 
-%
+
+% Handles asynchronous requests to the node. The sender node is stored in 
+% the recipient's routing table.
 handle_cast({Request, SenderPid}, State) when is_tuple(Request) ->
     utils:debug_print("Handling ~p", [Request]),
     {RoutingTable, _, K, _, BucketSize} = State,
@@ -450,7 +477,6 @@ handle_cast({Request, SenderPid}, State) when is_tuple(Request) ->
     ?MODULE:async_request_handler(Request, State).
 
 % A node store a key/value pair in its own values table.
-% The node also saves the sender node in its routing table.
 async_request_handler({store, Key, Value}, State) ->
     {_, ValuesTable, K, _, _} = State,
     KeyHash = utils:k_hash(Key, K),
@@ -504,7 +530,8 @@ handle_info({'EXIT', FromPid, _}, State) ->
     thread:check_threads_status(),
     {noreply, State};
 handle_info(_,State) ->
-    {noreply, State}.    
+    {noreply, State}
+.    
 
 %----------------------------------------------
 %  NODE AS A CLIENT
@@ -516,7 +543,9 @@ send_request(Pid,Request,RoutingTable, K) ->
             ?MODULE:delete_node(Pid, RoutingTable, K),
             {error,Reason};
         Response -> Response
-    end.
+    end
+.
+
 % Finds the K closest nodes in the network to a given HashID.
 % The function starts by querying the local routing table for potential candidates.
 % It then recoursively contacts nodes to refine the list of closest nodes.
@@ -524,7 +553,8 @@ find_k_nearest_node(RoutingTable, HashID, BucketSize, K) ->
     % Retrieve the initial list of closest nodes from the routing table.
     NodeList = ?MODULE:find_node(RoutingTable, BucketSize, K, HashID),
     % Begin the recursive search to refine the closest node list.
-    ?MODULE:find_k_nearest_node(RoutingTable, HashID, BucketSize, K, NodeList, []).
+    ?MODULE:find_k_nearest_node(RoutingTable, HashID, BucketSize, K, NodeList, [])
+.
 
 % Base case: If there are no more nodes to contact, return the sorted list of the K 
 % closest nodes.
@@ -561,7 +591,8 @@ find_k_nearest_node(RoutingTable, HashID, BucketSize, K, [{NodeHash, NodePid}|T]
         _ -> 
             Result = ?MODULE:find_k_nearest_node(RoutingTable, HashID, BucketSize, K, T, ContactedNodes)
     end,
-    Result.
+    Result
+.
 
 % Client-side function to store a key/value pair in the K nodes closest
 % to the hash_id of the pair.
@@ -575,7 +606,8 @@ distribute_value(Key, Value, RoutingTable, K, Bucket_Size) ->
         end,
         NodeList
     ),
-    analytics_collector:finished_distribute(Event).
+    analytics_collector:finished_distribute(Event)
+.
 
 % Finds the value associated with a given key in the network
 % by sending find_value requests to node that are every time closer to
@@ -594,7 +626,8 @@ lookup_for_value(Key, K, [{_, Pid} | T], ContactedNodes, RoutingTable) ->
         {ok, ValueKey, Value} ->
             {ok, ValueKey, Value};
         _ -> ?MODULE:lookup_for_value(Key,K, T, [Pid | ContactedNodes],RoutingTable)
-    end.
+    end
+.
 
 
 

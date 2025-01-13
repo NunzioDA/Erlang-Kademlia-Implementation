@@ -18,14 +18,15 @@
 % that can be run.
 start() ->
     RealMessageLength = utils:print_centered_rectangle(["KADEMLIA NETWORK SIMULATION"]),
-    utils:print_centered_rectangle(["Authors:", "Nunzio D'Amore", "Francesco Rossi"], RealMessageLength),
+    utils:print_centered_rectangle(["Authors:", "Nunzio D'Amore", "Francesco Pio Rossi"], RealMessageLength),
     utils:print("~nChoose between the following tests:~n"),
     utils:print("1. Test dying process~n"),
     utils:print("2. Test join mean time~n"),
     utils:print("3. Test lookup mean time~n"),
     utils:print("4. Test republisher~n"),
     utils:print("5. Exit~n"),
-    ?MODULE:choose_test().
+    ?MODULE:choose_test()
+.
 
 % This function is used to choose the test to run
 % based on the user input.
@@ -42,7 +43,8 @@ choose_test() ->
         "5" -> ok;
         _ -> utils:print("Invalid choice~p~n", [Choice]),
             ?MODULE:choose_test()
-    end.
+    end
+.
 
 % This function is used to make the user choose
 % between the test with a large number of node 
@@ -61,7 +63,8 @@ choose_parameters() ->
         "3" -> {2, 500, 4};
         TrimmedChoice -> utils:print("Invalid choice: ~p~n", [TrimmedChoice]),
             ?MODULE:choose_test()
-    end.
+    end
+.
 
 
 start_test(TestFunction) ->
@@ -75,7 +78,8 @@ start_test(TestFunction) ->
             ?MODULE:destroy(),
             timer:sleep(1000) % Wait for the processes to die
     end,
-    TestFunction().
+    TestFunction()
+.
 
 % This function is used to start the environment
 % before starting the simulation
@@ -95,7 +99,8 @@ registerShell() ->
     if (ShellPid == undefined) ->
         register(shellPid, self());
     true -> ok
-    end.
+    end
+.
 
 % This function starts a Kademlia simulation by
 % starting the simulation enviroment and waiting for network
@@ -108,7 +113,8 @@ registerShell() ->
 %   - EventsToListen: lists of events type to listen to during
 %                     the simulation
 start_simulation(Bootstraps, Nodes, K, T) ->
-    ?MODULE:start_simulation(Bootstraps, Nodes, K, T, []).
+    ?MODULE:start_simulation(Bootstraps, Nodes, K, T, [])
+.
 start_simulation(Bootstraps, Nodes, K, T, EventsToListen) ->
 
     ?MODULE:start_test_environment(K, T),
@@ -130,7 +136,8 @@ start_simulation(Bootstraps, Nodes, K, T, EventsToListen) ->
     utils:print("Waiting for the network to converge~n"),
     TotalNodes = Nodes + Bootstraps,
     ?MODULE:wait_for_network_to_converge(TotalNodes),
-    ok.
+    ok
+.
 
 % This function starts the nodes that will join the kademlia network
 start_kademlia_network(Bootstraps, Nodes, K, T) ->
@@ -175,7 +182,7 @@ start_kademlia_network(Bootstraps, Nodes, K, T) ->
     true ->
         ok
     end
-    .
+.
 
 % This function is used to destroy the simulation
 % It kills all the processes and the analytics_collector
@@ -299,7 +306,8 @@ enter_processes_to_kill(Max) ->
     catch _:_ ->
         utils:print("Invalid input.~n"),
         enter_processes_to_kill(Max)
-    end.
+    end
+.
 
 test_lookup_meantime() ->
     T = 3000000, % This has to be big so it doesnt 
@@ -406,7 +414,6 @@ test_republisher() ->
     NewNearestNodes = analytics_collector:get_nodes_that_stored("foo"),
 
     utils:print("~nNew nodes storing foo: ~p~n", [NewNearestNodes])
-
 .  
 
 % --------------------------------------
@@ -421,7 +428,8 @@ pick_random_pid(RoutingTable) ->
         _ ->
             {_, RandomPid} = lists:nth(rand:uniform(length(NodeList)), NodeList),
             RandomPid
-    end.
+    end
+.
 
 wait_for_stores(Stores) ->
     utils:print_progress(0, false),
@@ -436,7 +444,8 @@ wait_for_stores(Stores) ->
                 1
             end
         end
-    ).
+    )
+.
 
 % This function is used to wait for a number of lookups.
 % It waits for the event system to notify the end of the lookups-
@@ -468,7 +477,8 @@ wait_for_lookups(Lookups) ->
     ?MODULE:wait_for_progress(
         fun() -> Fun(Fun) end,
         false
-    ).
+    )
+.
 
 % This function waits for the network to converge
 % based on the event system of the analytics_collector
@@ -494,7 +504,8 @@ wait_for_network_to_converge(Started) ->
             end
         end
     ),
-    utils:print("~n").
+    utils:print("~n")
+.
 
 % This function is used to wait for a task to end
 % visualizing a progress bar based on Progress.
@@ -510,7 +521,8 @@ wait_for_progress(Progress, PrintBar) ->
         ok;
     true ->
         ?MODULE:wait_for_progress(Progress, PrintBar)
-    end.
+    end
+.
 
 insert_positive_integer(Message) -> 
     Input = io:get_line(Message),
@@ -524,4 +536,5 @@ insert_positive_integer(Message) ->
     catch _:_ ->
         utils:print("Invalid input: Insert a positive integer.~n"),
         ?MODULE:insert_positive_integer(Message)
-    end.
+    end
+.

@@ -12,14 +12,16 @@
 % dictionary so that the process and all his subprocesses can
 % use the same address
 save_address(Address) ->
-    put(my_address, Address).
+    put(my_address, Address)
+.
 
 % This function gets the process address
 my_address() ->
     case get(my_address) of
         undefined -> self();
         Address -> Address
-    end.
+    end
+.
 
 % This function is used to send synchronous requests to a node.
 % NodeId is the node to which the request is sent.
@@ -28,13 +30,16 @@ send_request(NodePid, Request) when is_pid(NodePid) ->
         gen_server:call(NodePid, {Request, ?MODULE:my_address()})
     catch _:Reason ->
         {error, Reason}
-    end.
+    end
+.
 
 % This function is used to send asynchronous requests to a node.
 % NodeId is the node to which the request is sent.
 send_async_request(NodePid, Request) when is_pid(NodePid) ->
-    gen_server:cast(NodePid, {Request, ?MODULE:my_address()}).
+    gen_server:cast(NodePid, {Request, ?MODULE:my_address()})
+.
 
 % This function is used to get the hash id of the node starting from his pid.
 my_hash_id(K) ->
-    utils:k_hash(?MODULE:my_address(), K).
+    utils:k_hash(?MODULE:my_address(), K)
+.

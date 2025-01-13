@@ -22,8 +22,8 @@ to_bit_list(<<Bit:1/bits, Rest/bits>>) ->
     true -> 
         NewBit = 0
     end,
-    [NewBit] ++ ?MODULE:to_bit_list(Rest).
-
+    [NewBit] ++ ?MODULE:to_bit_list(Rest)
+.
 
 % This function is used to create a K-bit hash from a given data.
 k_hash(Data, K) when is_pid(Data) ->
@@ -32,8 +32,8 @@ k_hash(Data, K) when is_integer(K), K > 0 ->
     Hash = crypto:hash(sha256, Data),
     % Takes the first K bits of the hash
     <<KBits:K/bits, _/bits>> = Hash,
-    KBits.
-
+    KBits
+.
 
 % This function is used to get the index of the subtree that contains the target id.
 get_subtree_index(Binary1, Binary2) ->
@@ -44,11 +44,13 @@ get_subtree_index(Binary1, Binary2) ->
         BitSize;
     true ->
         MostSignificant
-    end.
+    end
+.
 
 % This function is used to get the index of the most significant bit in a binary.
 most_significant_bit_index(Binary) ->
-    ?MODULE:most_significant_bit_index(Binary, 1).
+    ?MODULE:most_significant_bit_index(Binary, 1)
+.
 % When the first bit is 1 or the binary is empty, the index is returned.
 most_significant_bit_index(<<1:1, _/bits>>, Index) ->
     Index;
@@ -56,7 +58,8 @@ most_significant_bit_index(<<>>, Index) ->
     Index;
 % Otherwise, the function is called recursively increasing the Index and removing the first bit.
 most_significant_bit_index(<<_:1, Rest/bits>>, Index) ->
-    ?MODULE:most_significant_bit_index(Rest, Index + 1).
+    ?MODULE:most_significant_bit_index(Rest, Index + 1)
+.
 
 
 % This function is used to calculate the xor distance between two binary ids.
@@ -65,7 +68,8 @@ xor_distance(HashID1, HashID2) ->
     <<N1:K>> = HashID1,
     <<N2:K>> = HashID2,
     R = N1 bxor N2,
-    <<R:K>>.
+    <<R:K>>
+.
 
 % This function is used to sort a list of nodes by their XOR distance from a target ID.
 % Using the PID along with the XOR distance to sort the node list makes the network more  
@@ -89,7 +93,8 @@ sort_node_list(NodeList, TargetId) ->
             end
         end, 
         NodeList
-    ).
+    )
+.
 
 % This function is used to remove duplicates from a list
 remove_duplicates(List) ->
@@ -103,7 +108,8 @@ remove_duplicates(List) ->
         end, 
         [], 
         List
-    ).
+    )
+.
 
 % This function is used to filter already contacted nodes
 % from a nodes list
@@ -119,7 +125,8 @@ remove_contacted_nodes(NodesList, ContactedNodes) ->
         end, 
         [],
         NodesList
-    ).
+    )
+.
 
 % This function is used to check if 
 % there are empty branches in the routing table.
@@ -137,7 +144,8 @@ empty_branches(RoutingTable, K) ->
         lists:seq(1,K)    
     ),
 
-    AnyEmpty.
+    AnyEmpty
+.
 
 % branches_with_less_than(RoutingTable, K, MinLen) ->
 
@@ -169,7 +177,8 @@ pid_in_routing_table(RoutingTable, Pid, K) ->
             lists:keymember(Pid, 2, NodeList);
         _ ->
             false
-    end.
+    end
+.
 
 % --------------------------------------------------------
 % Print functions
@@ -183,7 +192,8 @@ center(String, Width) ->
     RightPadding = Padding - LeftPadding,
     LeftSpaces = lists:duplicate(LeftPadding, $ ),
     RightSpaces = lists:duplicate(RightPadding, $ ),
-    lists:concat([LeftSpaces, String, RightSpaces]).
+    lists:concat([LeftSpaces, String, RightSpaces])
+.
 
 % This function is used to print 
 % the title.
@@ -205,7 +215,8 @@ print_centered_rectangle(Content) ->
     true ->
         RealMessageLength = MinMessageLength
     end,
-    ?MODULE:print_centered_rectangle(Content, RealMessageLength).
+    ?MODULE:print_centered_rectangle(Content, RealMessageLength)
+.
 
 print_centered_rectangle(Content, RealMessageLength) ->    
     utils:print("+" ++ lists:duplicate(RealMessageLength, $-) ++ "+~n"),
@@ -218,7 +229,8 @@ print_centered_rectangle(Content, RealMessageLength) ->
     ),
 
     utils:print("+" ++ lists:duplicate(RealMessageLength, $-) ++ "+~n"),
-    RealMessageLength.
+    RealMessageLength
+.
 
 % Debugging function to print the routing table of the node.
 % The routing table has to be passed as a list of tuples
@@ -336,13 +348,15 @@ print_routing_table(RoutingTableToList) ->
 print(Format)->
     io:format(Format).
 print(Format, Data)->
-    io:format(Format, Data).
+    io:format(Format, Data)
+.
 
 
 % Verbose is used to decide if the debug_print function
 % should print the text or not 
 set_verbose(Verbose) ->
-    put(verbose, Verbose).
+    put(verbose, Verbose)
+.
 
 % Used to get verbosity status
 verbose() ->
@@ -351,7 +365,9 @@ verbose() ->
         Result;
     true ->
         false
-    end.
+    end
+.
+
 % Used to print debugging messages
 % It only pints when verbosity is set to true
 debug_print(Format)->
@@ -365,7 +381,8 @@ do_it_if_verbose(Fun) ->
     if Verbose ->
         Fun();
     true -> ok
-    end.
+    end
+.
 
 % This function is used to print a progress bar
 print_progress(ProgressRatio, PrintBar) ->
@@ -396,4 +413,5 @@ print_progress(ProgressRatio, PrintBar) ->
     true ->
         Bar = ""
     end,
-    io:format("\r~s ~3B%  ", [Bar, Progress]).
+    io:format("\r~s ~3B%  ", [Bar, Progress])
+.

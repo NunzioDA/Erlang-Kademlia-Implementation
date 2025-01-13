@@ -36,7 +36,8 @@ deleted_node() ->
     case thread:get_named(routing_table_filler_pid) of
         undefined -> utils:print("Start a join thread before signaling deleted nodes");
         Pid -> Pid ! {deleted_node}
-    end. 
+    end
+. 
 
 % This function checks if the node has been deleted from the network
 % and if so it starts the check_for_empty_branches function
@@ -50,7 +51,8 @@ check_deletion_message(RoutingTable, K, BucketSize) ->
         ok         
     end,
 
-    ?MODULE:check_deletion_message(RoutingTable, K, BucketSize).
+    ?MODULE:check_deletion_message(RoutingTable, K, BucketSize)
+.
 
 % This function checks if there are empty branches in the routing table
 % and if so it starts the join procedure again.
@@ -59,7 +61,8 @@ check_for_empty_branches(RoutingTable, K, BucketSize) ->
     if EmptyBranches -> 
         ?MODULE:fill_routing_table(RoutingTable, K, BucketSize, {ok, nearest_bootstrap}, true);
     true -> ok
-    end.
+    end
+.
 
 % This function is used to pick a random bootstrap node
 % from those signaled to the analytics_collector
@@ -77,11 +80,10 @@ pick_bootstrap() ->
             Index = rand:uniform(Length),
             Bootstrap = lists:nth(Index, BootstrapList),
             Bootstrap
-    end.
+    end
+.
 
-% This function is used to get
-% the nearest bootstrap node  
-% to this node
+% This function is used to get the nearest bootstrap node to this node
 nearest_bootstrap(K) ->
     BootstrapList = analytics_collector:get_bootstrap_list(),
     %converting the list to a list of {hash, pid}
@@ -101,7 +103,8 @@ nearest_bootstrap(K) ->
         _ ->                    
             [{_,First}|_] = utils:sort_node_list(BootstrapListFiltered, com:my_hash_id(K)),
             First
-    end.
+    end
+.
 
 % This function starts the join procedure.
 % If at the end of the procedure there are still empty 
@@ -135,7 +138,6 @@ fill_routing_table(RoutingTable, K, K_Bucket_Size, LastResult, JoinTimeSignaled)
         ok
     end
 .
-
 
 % The join procedure allows the node to join the network by contacting other nodes
 % and exchanging routing data to fill its routing table.

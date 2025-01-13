@@ -30,12 +30,11 @@ start(Function) ->
     Pid
 .
 
-% This method kills a thread
-% where Thread is the Pid of 
-% the thread to kill
+% This method kills a thread where Thread is the Pid of the thread to kill
 kill(Thread) ->
     unlink(Thread),
-    exit(Thread, kill).
+    exit(Thread, kill)
+.
 
 % This method kills all the threads started from the parent process
 kill_all()->
@@ -60,6 +59,7 @@ check_verbose() ->
         ok
     end
 .
+
 % This function flushes every message except the last one
 receive_last_verbose(LastVerbose) ->
     receive
@@ -92,7 +92,8 @@ check_threads_status() ->
         Threads
     ),
     put(my_threads, NewThreads)
-.    
+.  
+
 % This method is used to get all the threads started
 % from a parent process 
 get_threads() ->
@@ -107,6 +108,7 @@ get_threads() ->
 set_verbose(Verbose) ->
     ?MODULE:send_message_to_my_threads({verbose, Verbose})
 .
+
 % This is a generic function that sends messages to
 % the threads a process started.
 % It also checks if threads are still alive, removing those
@@ -134,7 +136,8 @@ send_message_to_my_threads(Message) ->
 % a thread Pid with a name in the
 % current process dictionary
 save_named(Name, Pid) when is_pid(Pid) ->
-    put(Name, Pid).
+    put(Name, Pid)
+.
 
 % This function is used to get 
 % the pid of a thread saved with
@@ -154,4 +157,5 @@ get_named(Name) ->
             end;
         % Returning the named thread pid
         ServerPidFound -> ServerPidFound
-    end.
+    end
+.

@@ -119,11 +119,11 @@ fill_routing_table(RoutingTable, K, K_Bucket_Size, LastResult, JoinTimeSignaled)
     BootstrapHash = utils:k_hash(BootstrapPid, K),
         
     case JoinTimeSignaled of
-        true->
+        false->
             EventId = analytics_collector:started_join_procedure(),
             Result = ?MODULE:join_procedure([{BootstrapHash, BootstrapPid}], RoutingTable, K, K_Bucket_Size, [], []),
             analytics_collector:finished_join_procedure(EventId);
-        false ->
+        true ->
             Result = ?MODULE:join_procedure([{BootstrapHash, BootstrapPid}], RoutingTable, K, K_Bucket_Size, [], [])
     end,
 

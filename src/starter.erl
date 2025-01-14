@@ -52,12 +52,12 @@ choose_test() ->
 % or a smaller network
 choose_parameters() ->
     utils:print("Please choose which network you want to use. ~n"),
-    utils:print("1. 10 bootstrap - 8000 nodes~n"),
-    utils:print("2. 10 bootstrap - 4000 nodes~n"),
-    utils:print("3. 10 bootstrap - 2000 nodes~n"),
-    utils:print("4.  5 bootstrap - 1000 nodes~n"),
-    utils:print("5.  2 bootstrap -  500 nodes~n"),
-    utils:print("6.  1 bootstrap -  250 nodes~n"),
+    utils:print("1. 10 bootstrap - 8000 nodes - K = 5~n"),
+    utils:print("2. 10 bootstrap - 4000 nodes - K = 5~n"),
+    utils:print("3. 10 bootstrap - 2000 nodes - K = 5~n"),
+    utils:print("4.  5 bootstrap - 1000 nodes - K = 5~n"),
+    utils:print("5.  2 bootstrap -  500 nodes - K = 4~n"),
+    utils:print("6.  1 bootstrap -  250 nodes - K = 3~n"),
     Choice = io:get_line("Please enter the number of you choice: "),
     utils:print("~n"),
     case string:trim(Choice) of

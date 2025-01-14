@@ -342,10 +342,26 @@ flush_nodes_that_stored() ->
 % lists, the start times and the end times.
 % Each list is a list of tuples {Pid, time}
 calculate_mean_time(StartedTimes, FinishedTimes) ->
+	StartedTriplette = lists:foldl(
+		fun({Pid, {Value, EventTime}, _}, Acc) ->
+			[{Pid, Value, EventTime}] ++ Acc
+		end,
+		[],
+		StartedTimes
+	),
+
+	FinishedTriplette = lists:foldl(
+		fun({Pid, {Value, EventTime}, _}, Acc) ->
+			[{Pid, Value, EventTime}] ++ Acc
+		end,
+		[],
+		FinishedTimes
+	),
+
 	% Getting all the events in start times that are contained in finish times 
-	FilteredStartedTimes = [{Pid, Value, Time} || {Pid, Value, Time} <- StartedTimes, lists:keymember(Value, 2, FinishedTimes)],
+	FilteredStartedTimes = [{Pid, Value, Time} || {Pid, Value, Time} <- StartedTriplette, lists:keymember(Value, 2, FinishedTriplette)],
 	% Getting all the events in finished times that are contained in filtered start times
-	FilteredFinishTimes = [{Pid, Value, Time} || {Pid, Value, Time} <- FinishedTimes, lists:keymember(Value, 2, FilteredStartedTimes)],
+	FilteredFinishTimes = [{Pid, Value, Time} || {Pid, Value, Time} <- FinishedTriplette, lists:keymember(Value, 2, FilteredStartedTimes)],
 	
 	% Sorting the lists so we can later zip them correctly
 	SortedStart = lists:sort(
@@ -432,7 +448,8 @@ get_events(EventType) ->
 % start events with finish events.
 started_time_based_event(EventType) ->
 	EventId = erlang:unique_integer([positive]),
-	?MODULE:add(EventType, EventId),
+	CurrentTime = erlang:monotonic_time(millisecond),
+	?MODULE:add(EventType, {EventId,CurrentTime}),
 	EventId
 .
 
@@ -440,7 +457,8 @@ started_time_based_event(EventType) ->
 % It requires the EventId that is the unique integer generated in
 % started_time_based_event
 finished_time_based_event(EventType, EventId) ->
-	?MODULE:add(EventType, EventId)
+	CurrentTime = erlang:monotonic_time(millisecond),
+	?MODULE:add(EventType, {EventId,CurrentTime})
 .	
 
 % This function is used to compute time based event

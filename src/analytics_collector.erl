@@ -10,16 +10,16 @@
 -behaviour(gen_server).
 
 -export([init/1, handle_call/3, handle_cast/2, listen_for/1, notify_listeners/3, kill/0, enroll_node/0, stored_value/1]).
--export([start/2, enroll_bootstrap/0, get_node_list/0, started_join_procedure/0, get_started_join_nodes/0, flush_join_events/0]).
--export([finished_join_procedure/1, get_unfinished_join_nodes/0, get_finished_join_nodes/0, flush_lookups_events/0]).
--export([start_server/2, add/2, get_events/1, make_request/2, calculate_mean_time/2, register_new_event/4, empty_event_list/1]).
+-export([start/3, enroll_bootstrap/0, get_node_list/0, started_join_procedure/0, get_started_join_nodes/0, flush_join_events/0]).
+-export([finished_join_procedure/1, get_unfinished_join_nodes/0, get_finished_join_nodes/0, flush_lookups_events/0, shut/0]).
+-export([start_server/3, add/2, get_events/1, make_request/2, calculate_mean_time/2, register_new_event/4, empty_event_list/1]).
 -export([started_time_based_event/1, started_lookup/0, finished_time_based_event/2, finished_lookup/1, lookup_mean_time/0]).
 -export([get_started_lookup/0, get_bootstrap_list/0, join_procedure_mean_time/0, get_nodes_that_stored/1,get_finished_lookup/0]).
 -export([get_started_distribute/0,get_finished_distribute/0, flush_distribute_events/0, started_distribute/0, finished_distribute/1]).
 -export([distribute_mean_time/0, flush_nodes_that_stored/0, time_based_event_mean_time/2, get_simulation_parameters/0]).
--export([started_filling_routing_table/0, finished_filling_routing_table/1, filling_routing_table_mean_time/0]).
--export([get_started_filling_routing_table_nodes/0, get_finished_filling_routing_table_nodes/0]).
--export([flush_filling_routing_table_events/0, get_unfinished_filling_routing_table_nodes/0]).
+-export([started_filling_routing_table/0, finished_filling_routing_table/1, filling_routing_table_mean_time/0, talk/0]).
+-export([get_started_filling_routing_table_nodes/0, get_finished_filling_routing_table_nodes/0, notify_server_is_running/1]).
+-export([flush_filling_routing_table_events/0, get_unfinished_filling_routing_table_nodes/0, wait_for_initialization/0]).
 % --------------------------------
 % Starting methods
 % --------------------------------
@@ -27,19 +27,20 @@
 % This function is used to start the analytics collector.
 % If an instance is already running it returns a warning.
 % Otherwise it starts a new instance.
-start(K, T) ->
+start(K, T, ListenerPid) ->
 	Pid = whereis(analytics_collector),
 
 	if Pid == undefined ->
-    	?MODULE:start_server(K,T);
+    	?MODULE:start_server(K,T,ListenerPid);
 	true ->
+		?MODULE:notify_server_is_running(ListenerPid),
 		{warning, "An instance of analytics_collector is already running."}
 	end
 .
 
 % This functions starts a gen_server process
-start_server(K, T) ->
-    {ok, Pid} = gen_server:start(?MODULE, [K, T], []),
+start_server(K, T, ListenerPid) ->
+    {ok, Pid} = gen_server:start(?MODULE, [K, T, ListenerPid], []),
     Pid
 .
 
@@ -366,10 +367,22 @@ listen_for(EventType) ->
 % -------------------------------------------	
 % GENERIC FUNCTIONS
 % -------------------------------------------
-
+%
+% This function is used to make a request
+% to the analytics_server to get the current
+% simulation parameters K and T
 get_simulation_parameters() ->
 	?MODULE:make_request(call, {get_simulation_parameters})
 .
+% This request is used for debugging purposes
+% setting verbose to true
+talk() -> 
+	?MODULE:make_request(cast, {talk}).
+
+% This request is used for debugging purposes
+% setting verbose to false
+shut() -> 
+	?MODULE:make_request(cast, {shut}).
 
 % This function is the generic function used to add new events.
 add(EventType, EventValue) ->
@@ -445,13 +458,17 @@ make_request(Type, Request) ->
 	end
 .
 
+notify_server_is_running(ListenerPid)->
+	ListenerPid ! {analytics_collector_running}.
+
 % This function is called to initialize the gen_server.
 % It registers the analytics_collector Pid and creates the analytics ets to
 % collect data.
-init([K, T]) ->
+init([K, T, ListenerPid]) ->
 	register(analytics_collector, self()),
 	ets:new(analytics, [set, public, named_table]),
 	ListenersMap = #{},
+	?MODULE:notify_server_is_running(ListenerPid),
 	{ok, {K, T, ListenersMap}}
 .
 
@@ -463,9 +480,19 @@ handle_call({get_simulation_parameters}, _From, State) ->
 % This clause handle the registration of a generic event
 handle_cast({new_event, Pid, EventType, Event}, State) ->
 	{_,_,ListenersMap} = State,
+	utils:debug_print("ADDING ~p",[EventType]),
 	?MODULE:register_new_event(Pid, EventType, Event, ListenersMap),
 	{noreply, State};
-
+% This request is used for debugging purposes
+% setting verbose to true
+handle_cast({talk}, State) ->
+	utils:set_verbose(true),
+	{noreply, State};
+% This request is used for debugging purposes
+% setting verbose to false
+handle_cast({shut}, State) ->
+	utils:set_verbose(false),
+	{noreply, State};
 % This clause handle the registration of an event listener
 handle_cast({new_listener, Pid, EventType}, State) ->
 	{K,T,ListenersMap} = State,
@@ -501,6 +528,18 @@ register_new_event(Pid, EventType, EventValue, ListenersMap) ->
 			ets:insert(analytics, {EventType, [NewRecord]})
 	end,
 	?MODULE:notify_listeners(EventType, NewRecord, ListenersMap)
+.
+
+% This function is used to wait for
+% the analytics_collector to 
+% finish the init function.
+% Use this function only after using start/3 function
+% passing self() as the third parameter.
+wait_for_initialization() ->
+	receive 
+        {analytics_collector_running} ->
+            ok
+    end
 .
 
 % This function is used to kill the analytics collector

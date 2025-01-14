@@ -62,11 +62,12 @@ choose_parameters() ->
     utils:print("~n"),
     case string:trim(Choice) of
         % Returning network parameters
+        % {Bootstrap, Nodes, K}
         "1" -> {10, 8000, 5};
         "2" -> {10, 4000, 5};
         "3" -> {10, 2000, 5};
         "4" -> {5, 1000, 5};
-        "5" -> {10, 500, 5};
+        "5" -> {2, 500, 4};
         "6" -> {1, 250, 3};
         TrimmedChoice -> 
             utils:print("Invalid choice: ~p~n", [TrimmedChoice]),

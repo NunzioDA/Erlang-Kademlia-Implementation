@@ -17,6 +17,7 @@
 % It prints the welcome message and the list of tests
 % that can be run.
 start() ->
+
     RealMessageLength = utils:print_centered_rectangle(["KADEMLIA NETWORK SIMULATION"]),
     utils:print_centered_rectangle(["Authors:", "Nunzio D'Amore", "Francesco Pio Rossi"], RealMessageLength),
     utils:print("~nChoose between the following tests:~n"),
@@ -53,18 +54,20 @@ choose_parameters() ->
     utils:print("Please choose which network you want to use. ~n"),
     utils:print("1. 10 bootstrap - 8000 nodes~n"),
     utils:print("2. 10 bootstrap - 4000 nodes~n"),
-    utils:print("3.  5 bootstrap - 1000 nodes~n"),
-    utils:print("4.  2 bootstrap -  500 nodes~n"),
-    utils:print("5.  1 bootstrap -  250 nodes~n"),
+    utils:print("3. 10 bootstrap - 2000 nodes~n"),
+    utils:print("4.  5 bootstrap - 1000 nodes~n"),
+    utils:print("5.  2 bootstrap -  500 nodes~n"),
+    utils:print("6.  1 bootstrap -  250 nodes~n"),
     Choice = io:get_line("Please enter the number of you choice: "),
     utils:print("~n"),
     case string:trim(Choice) of
         % Returning network parameters
         "1" -> {10, 8000, 5};
         "2" -> {10, 4000, 5};
-        "3" -> {5, 1000, 4};
-        "4" -> {2, 500, 4};
-        "5" -> {1, 250, 4};
+        "3" -> {10, 2000, 5};
+        "4" -> {5, 1000, 5};
+        "5" -> {10, 500, 5};
+        "6" -> {1, 250, 3};
         TrimmedChoice -> 
             utils:print("Invalid choice: ~p~n", [TrimmedChoice]),
             ?MODULE:choose_parameters()
@@ -91,8 +94,9 @@ start_test(TestFunction) ->
 % It starts the analytics_collector and registers
 % the shell pid
 start_test_environment(K,T) ->
-    analytics_collector:start(K,T),
-    ?MODULE:registerShell()
+    ?MODULE:registerShell(),
+    analytics_collector:start(K,T, self()),
+    analytics_collector:wait_for_initialization()    
 .
 
 % The shell pid is registered
@@ -273,6 +277,12 @@ test_join_mean_time() ->
     FillMeanTime = analytics_collector:filling_routing_table_mean_time(),
     utils:print("Mean time for processes to fill the routing table: ~pms~n",[FillMeanTime]),
 
+    LJS = length(analytics_collector:get_started_join_nodes()),
+    LJF = length(analytics_collector:get_finished_join_nodes()),
+    utils:print("Started ~p~n", [LJS]),
+    utils:print("Finished ~p~n", [LJF]),
+
+
     [{FirstFinished,_,_} | _] = analytics_collector:get_finished_filling_routing_table_nodes(),
     {ok,RoutingTable} = node:get_routing_table(FirstFinished),
 
@@ -293,6 +303,9 @@ test_join_mean_time() ->
 
     utils:print("Waiting for new nodes to converge~n"),
     ?MODULE:wait_for_network_to_converge(NewNodes),
+    
+    analytics_collector:talk(),
+
     JoinMeanTimeNewP = analytics_collector:join_procedure_mean_time(),
     utils:print("Mean time for new processes to join the network: ~pms~n",[JoinMeanTimeNewP]),
     FillMeanTimeP = analytics_collector:filling_routing_table_mean_time(),
@@ -495,17 +508,11 @@ wait_for_network_to_converge(Started) ->
     utils:print_progress(0, true),   
     ?MODULE:wait_for_progress(
         fun() ->
-            Unfinished = analytics_collector:get_unfinished_filling_routing_table_nodes(),
-            if length(Unfinished) > 0 ->
-                receive
-                    {event_notification, finished_filling_routing_table, _} ->
-                        Finished = analytics_collector:get_finished_filling_routing_table_nodes(),
-                        Progress = length(Finished) / Started,
-                        Progress
-                after 8000 ->
-                    1
-                end;
-            true -> 1
+            receive
+                {event_notification, finished_filling_routing_table, _} ->
+                    Finished = analytics_collector:get_finished_filling_routing_table_nodes(),
+                    Progress = length(Finished) / Started,
+                    Progress
             end
         end
     ),

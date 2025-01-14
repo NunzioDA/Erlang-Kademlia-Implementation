@@ -294,11 +294,6 @@ test_join_mean_time() ->
     FillMeanTime = analytics_collector:filling_routing_table_mean_time(),
     utils:print("Mean time for processes to fill the routing table: ~pms~n",[FillMeanTime]),
 
-    LJS = length(analytics_collector:get_started_join_nodes()),
-    LJF = length(analytics_collector:get_finished_join_nodes()),
-    utils:print("Started ~p~n", [LJS]),
-    utils:print("Finished ~p~n", [LJF]),
-
 
     [{FirstFinished,_,_} | _] = analytics_collector:get_finished_filling_routing_table_nodes(),
     {ok,RoutingTable} = node:get_routing_table(FirstFinished),
@@ -517,7 +512,7 @@ wait_for_lookups(Lookups) ->
 
 % This function waits for the network to converge
 % based on the event system of the analytics_collector
-% waiting for finished_join_procedure event
+% waiting for finished_filling_routing_table event
 %
 % call analytics_collector:listen_for(finished_filling_routing_table)
 % before calling wait_for_network_to_converge

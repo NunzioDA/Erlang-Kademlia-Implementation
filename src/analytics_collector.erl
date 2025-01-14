@@ -69,16 +69,24 @@ enroll_node()->
 %--------------------------------------------
 % Join
 %
+% Join events are not treated as time_based events
+% using started_time_based_event and finished_time_based_event
+% to improve performances
+%
 % This function is used to signal that a process started
 % the join_procedure
 started_join_procedure() ->
-	?MODULE:started_time_based_event(started_join_procedure)
+	erlang:monotonic_time(millisecond)
+	% ?MODULE:started_time_based_event(started_join_procedure)
 .
 
 % This function is used to signal that a process finished
 % the join_procedure
-finished_join_procedure(EventId) ->
-	?MODULE:finished_time_based_event(finished_join_procedure, EventId)
+finished_join_procedure(Start) ->
+	End = erlang:monotonic_time(millisecond),
+	Elapsed = End - Start,
+	?MODULE:add(finished_join_procedure, Elapsed)
+	% ?MODULE:finished_time_based_event(finished_join_procedure, EventId)
 .
 
 %--------------------------------------------
@@ -143,10 +151,31 @@ stored_value(Key) ->
 %--------------------------------------------
 % Join
 %
+% Join events are not treated as time_based 
+% events using time_based_event_mean_time 
+% to improve performances
+%--------------------------------------------
+%
 % This function is used to compute the join_procedure
 % mean time based on the signaled events
 join_procedure_mean_time() ->
-	?MODULE:time_based_event_mean_time(started_join_procedure, finished_join_procedure)
+	FinishedTimes = ?MODULE:get_events(finished_join_procedure),
+
+	case length(FinishedTimes) of
+		0 -> 0;
+		Len -> 
+			TotalTime = lists:foldl(
+				fun({_,Elapsed,_},Total) ->
+					Total + Elapsed
+				end,
+				0,
+				FinishedTimes	
+			),
+			Result = TotalTime div Len,
+			Result
+	end
+
+	% ?MODULE:time_based_event_mean_time(started_join_procedure, finished_join_procedure)
 .
 
 % This function return all the processes that haven't finished the

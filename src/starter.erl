@@ -52,24 +52,40 @@ choose_test() ->
 % or a smaller network
 choose_parameters() ->
     utils:print("Please choose which network you want to use. ~n"),
-    utils:print("1. 10 bootstrap - 8000 nodes - K = 5~n"),
-    utils:print("2. 10 bootstrap - 4000 nodes - K = 5~n"),
-    utils:print("3. 10 bootstrap - 2000 nodes - K = 5~n"),
-    utils:print("4.  5 bootstrap - 1000 nodes - K = 5~n"),
-    utils:print("5.  2 bootstrap -  500 nodes - K = 4~n"),
-    utils:print("6.  1 bootstrap -  250 nodes - K = 3~n"),
+
+    AvailableNetworks = [
+        {10, 8000, 5},
+        {10, 4000, 5},
+        {10, 2000, 5},
+        {5, 1000, 5},
+        {2, 500, 4},
+        {1, 250, 3}
+    ],
+
+    % Visualizing available choice
+    lists:foldl(
+        fun({Bootstrap, Nodes, K}, Index) ->
+            utils:print("~p. ~p bootstrap - ~p nodes - K = ~p~n",[Index, Bootstrap, Nodes, K]),
+            Index + 1
+        end,
+        1,
+        AvailableNetworks    
+    ),
+
     Choice = io:get_line("Please enter the number of you choice: "),
     utils:print("~n"),
-    case string:trim(Choice) of
-        % Returning network parameters
-        % {Bootstrap, Nodes, K}
-        "1" -> {10, 8000, 5};
-        "2" -> {10, 4000, 5};
-        "3" -> {10, 2000, 5};
-        "4" -> {5, 1000, 5};
-        "5" -> {2, 500, 4};
-        "6" -> {1, 250, 3};
-        TrimmedChoice -> 
+
+    TrimmedChoice = string:trim(Choice),
+
+    case string:to_integer(TrimmedChoice) of
+        {Index, []} -> 
+            try
+                lists:nth(Index, AvailableNetworks)
+            catch _:_ ->
+                utils:print("Invalid choice: ~p~n", [TrimmedChoice]),
+                ?MODULE:choose_parameters()
+            end;
+        _ -> 
             utils:print("Invalid choice: ~p~n", [TrimmedChoice]),
             ?MODULE:choose_parameters()
     end
@@ -287,7 +303,7 @@ test_join_mean_time() ->
     [{FirstFinished,_,_} | _] = analytics_collector:get_finished_filling_routing_table_nodes(),
     {ok,RoutingTable} = node:get_routing_table(FirstFinished),
 
-    utils:print("~n~nRouting table of the first node (~p) that finished joining: ~n",[FirstFinished]),
+    utils:print("~n~nRouting table of the first node (~p) that finished to fill its routing table: ~n",[FirstFinished]),
     utils:print_routing_table(RoutingTable),
 
     analytics_collector:flush_join_events(),

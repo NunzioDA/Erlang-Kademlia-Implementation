@@ -11,7 +11,7 @@
 -export([wait_for_network_to_converge/1, wait_for_progress/1, destroy/0, wait_for_stores/1]).
 -export([choose_test/0, start_test/1,enter_processes_to_kill/1, start_simulation/5, choose_parameters/0]).
 -export([test_dying_process/0, pick_random_pid/1, test_join_mean_time/0,wait_for_progress/2]).
--export([test_lookup_meantime/0, wait_for_lookups/1, test_republisher/0, add_new_nodes/4]).
+-export([test_lookup_meantime/0, wait_for_lookups/1, test_republisher/0, start_new_nodes/4]).
 
 % This function is used to start the simulation
 % It prints the welcome message and the list of tests
@@ -157,7 +157,7 @@ start_simulation(Bootstraps, Nodes, K, T, EventsToListen) ->
     ),
 
     % Starting the network
-    ?MODULE:add_new_nodes(Bootstraps, Nodes, K, T),
+    ?MODULE:start_new_nodes(Bootstraps, Nodes, K, T),
 
     utils:print("Waiting for the network to converge~n"),
     TotalNodes = Nodes + Bootstraps,
@@ -166,7 +166,7 @@ start_simulation(Bootstraps, Nodes, K, T, EventsToListen) ->
 .
 
 % This function starts the nodes that will join the kademlia network
-add_new_nodes(Bootstraps, Nodes, K, T) ->
+start_new_nodes(Bootstraps, Nodes, K, T) ->
 
     case whereis(analytics_collector) of
         undefined ->

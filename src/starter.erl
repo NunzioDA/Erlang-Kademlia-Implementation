@@ -216,7 +216,7 @@ destroy() ->
     AllProcesses = analytics_collector:get_node_list(),
     lists:foreach(
         fun(Pid) ->
-            exit(Pid, kill)
+            node:kill(Pid)
         end,
         AllProcesses
     ),

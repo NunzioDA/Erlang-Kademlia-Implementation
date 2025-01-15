@@ -52,15 +52,18 @@ init([K, T, InitAsBootstrap, Verbose]) ->
     % Create unique table name for routing by appending the unique integer.
     RoutingTableName = list_to_atom("routing_table" ++ UniqueInteger),
     ValuesTableName = list_to_atom("values_table" ++ UniqueInteger),
+    MyValuesTableName = list_to_atom("my_values_table" ++ UniqueInteger),
     % Initialize ETS table with the specified properties.
     RoutingTable = ets:new(RoutingTableName, [set, public]),
     % Initialize ValuesTable as an empty map.
     ValuesTable = ets:new(ValuesTableName, [set, public]),
+    % Initialize MyValuesTable as an empty map.
+    MyValuesTable = ets:new(MyValuesTableName, [set, public]),
     % Define the bucket size for routing table entries.
     Bucket_Size = 20,
     % Starting the threads of the node.
     spare_node_manager:start(RoutingTable, K),
-    republisher:start(RoutingTable, K, T, Bucket_Size),
+    republisher:start(RoutingTable, K, T, Bucket_Size, MyValuesTable),
     analytics_collector:enroll_node(),
 
     if InitAsBootstrap ->
@@ -70,7 +73,7 @@ init([K, T, InitAsBootstrap, Verbose]) ->
     routing_table_filler:start(K,RoutingTable,Bucket_Size),
 
     % Return the initialized state, containing ETS tables and configuration parameters.
-    {ok, {RoutingTable, ValuesTable, K, T, Bucket_Size}}
+    {ok, {RoutingTable, ValuesTable, K, T, Bucket_Size, MyValuesTable}}
 .
 
 %-------------------------------------------------------
@@ -320,7 +323,7 @@ get_value(Key, K, ValuesTable) ->
 % of a specific node.
 % This is used in the shell to debugging purposes.
 handle_call({routing_table}, _From, State) ->
-    {RoutingTable, _, _, _, _} = State,
+    {RoutingTable, _, _, _, _, _} = State,
     % Return = utils:print_routing_table(RoutingTable, com:my_hash_id(K)),
     {reply, {ok, ets:tab2list(RoutingTable)}, State};
 % Handling synchronous requests to the node.
@@ -328,21 +331,21 @@ handle_call({routing_table}, _From, State) ->
 handle_call({Request, SenderPid}, _, State) ->  
     % Save the sender node in the routing table.
     utils:debug_print("Handling ~p ~p~n", [Request, SenderPid]),
-    {RoutingTable, _, K, _, BucketSize} = State,
+    {RoutingTable, _, K, _, BucketSize, _} = State,
     ?MODULE:save_node(SenderPid,RoutingTable,K,BucketSize),
     ?MODULE:request_handler(Request, SenderPid, State)
 .
 
 % Handles a request to find the closest nodes to a given HashID.
 request_handler({find_node, HashID}, _From, State) ->
-    {RoutingTable, _, K, _, Bucket_Size} = State,
+    {RoutingTable, _, K, _, Bucket_Size, _} = State,
     % Look up the closest K nodes within the routing table.
     NodeList = ?MODULE:find_node(RoutingTable, Bucket_Size, K, HashID),
     % Reply to the caller with the list of closest nodes and the current state.
     {reply, {ok, NodeList}, State};
 % Same as find_node, but returns the value if the recipient has it.
 request_handler({find_value, Key}, _From, State) ->
-    {RoutingTable, ValuesTable, K, _, Bucket_Size} = State,
+    {RoutingTable, ValuesTable, K, _, Bucket_Size, _} = State,
 
     case ?MODULE:get_value(Key, K, ValuesTable) of 
         {ok, Key, Value} -> 
@@ -358,7 +361,7 @@ request_handler({find_value, Key}, _From, State) ->
     end;
 % This request is used during the join operation to fill the routing table of the new node.
 request_handler({fill_my_routing_table, FilledIndexes}, ClientPid, State) ->
-    {RoutingTable, _, K, _, Bucket_Size} = State,
+    {RoutingTable, _, K, _, Bucket_Size, _} = State,
     % First the server finds all the branches that it shares with the client
     % making the filling procedue more efficient.
     ClientHash = utils:k_hash(ClientPid, K),
@@ -433,7 +436,7 @@ request_handler({send_ping, ToNodePid}, _, State) ->
 % This function is used to find a value in the network 
 % from the shell.
 request_handler({shell_lookup, Key, Verbose}, _, State) ->
-    {RoutingTable,_,K,_,_} = State,
+    {RoutingTable,_,K,_,_, _} = State,
     thread:start(
         fun() ->
             EventId = analytics_collector:started_lookup(),
@@ -456,7 +459,7 @@ request_handler({shell_lookup, Key, Verbose}, _, State) ->
 % This request is used from the shell to find the K nearest nodes to a given hash id,
 % that could be a pid or a key.
 request_handler({shell_find_nearest_nodes, ValueToFind},_,State) ->
-    {RoutingTable, _, K, _, BucketSize} = State,
+    {RoutingTable, _, K, _, BucketSize, _} = State,
     HashId = utils:k_hash(ValueToFind, K),
     Result = ?MODULE:find_k_nearest_node(RoutingTable, HashId, BucketSize, K),
     {reply, Result, State};
@@ -472,13 +475,13 @@ request_handler(_, _, State) ->
 % the recipient's routing table.
 handle_cast({Request, SenderPid}, State) when is_tuple(Request) ->
     utils:debug_print("Handling ~p", [Request]),
-    {RoutingTable, _, K, _, BucketSize} = State,
+    {RoutingTable, _, K, _, BucketSize, _} = State,
     ?MODULE:save_node(SenderPid,RoutingTable,K,BucketSize),
     ?MODULE:async_request_handler(Request, State).
 
 % A node store a key/value pair in its own values table.
 async_request_handler({store, Key, Value}, State) ->
-    {_, ValuesTable, K, _, _} = State,
+    {_, ValuesTable, K, _, _, _} = State,
     KeyHash = utils:k_hash(Key, K),
     case ets:lookup(ValuesTable, KeyHash) of
         [] -> 
@@ -511,7 +514,7 @@ terminate(Reason, _State) ->
     ok.
 
 handle_info({'EXIT', FromPid, _}, State) ->
-    {RoutingTable, _, K, T, Bucket_Size} = State,
+    {RoutingTable, _, K, T, Bucket_Size, MyValuesTable} = State,
     JoinThread = get(routing_table_filler_pid),
     RepublisherThread = get(republisher_pid),
     SpareNodeManagerThread = get(spare_node_manager),
@@ -521,7 +524,7 @@ handle_info({'EXIT', FromPid, _}, State) ->
         routing_table_filler:start(K,RoutingTable,Bucket_Size);
     FromPid == RepublisherThread ->
         % Restarting republisher thread
-        republisher:start(RoutingTable, K, T, Bucket_Size);
+        republisher:start(RoutingTable, K, T, Bucket_Size, MyValuesTable);
     FromPid == SpareNodeManagerThread ->
         % Restarting spare node manager thread
         spare_node_manager:start(RoutingTable, K);

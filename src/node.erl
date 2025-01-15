@@ -132,8 +132,6 @@ send_ping(NodePid,ToNodePid) when is_pid(NodePid) ->
 
 % This command is used to kill a process.
 kill(Pid) when is_pid(Pid) ->
-    % Unlinking so the parent is not killed.
-    unlink(Pid),
     exit(Pid, kill)
 .
 

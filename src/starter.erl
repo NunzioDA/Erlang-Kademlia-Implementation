@@ -316,7 +316,6 @@ test_join_mean_time() ->
     utils:print("Waiting for new nodes to converge~n"),
     ?MODULE:wait_for_network_to_converge(NewNodes),
     
-    analytics_collector:talk(),
 
     JoinMeanTimeNewP = analytics_collector:join_procedure_mean_time(),
     utils:print("Mean time for new processes to join the network: ~pms~n",[JoinMeanTimeNewP]),

@@ -73,7 +73,7 @@ Use the following commands to start a custom simulation and control the network.
     ```erlang
     node:lookup(NodePid, Key).
     ``` 
-4. Finding the nearest node to a specified value:
+4. Finding the nearest node to a specified value (it could be a node's pid or a string key):
 
     ```erlang
     node:shell_find_nearest_nodes(NodePid, Value).

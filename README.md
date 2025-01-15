@@ -40,7 +40,7 @@ Use the following commands to start a custom simulation and control the network.
     ```erlang
     starter:start_new_nodes(Bootstraps, Nodes, K, T).
     ```
-2. If, on the other hand, you do not wish to add new nodes but rather initiate a new network destroy the previously started network before using start_new_nodes/4:
+2. If, on the other hand, you do not wish to add new nodes but rather initiate a new network, destroy the previously started network before using start_new_nodes/4:
 
     ```erlang
     starter:destroy().

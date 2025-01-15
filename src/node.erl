@@ -119,9 +119,9 @@ shut(NodePid) when is_pid(NodePid) ->
 
 % This function is used from the shell
 % to start a procedure to find the K nearest nodes
-% to a given hash id
-shell_find_nearest_nodes(NodePid, HashId) ->
-    com:send_request(NodePid, {shell_find_nearest_nodes, HashId})
+% to a given value, that could be a Pid or a key
+shell_find_nearest_nodes(NodePid, ValueToFind) ->
+    com:send_request(NodePid, {shell_find_nearest_nodes, ValueToFind})
 .
 
 % This function is used from the shell 
@@ -453,9 +453,11 @@ request_handler({shell_lookup, Key, Verbose}, _, State) ->
         end   
     ),
     {reply, ok, State};
-% This request is used from the shell to find the K nearest nodes to a given hash id.
-request_handler({shell_find_nearest_nodes, HashId},_,State) ->
+% This request is used from the shell to find the K nearest nodes to a given hash id,
+% that could be a pid or a key.
+request_handler({shell_find_nearest_nodes, ValueToFind},_,State) ->
     {RoutingTable, _, K, _, BucketSize} = State,
+    HashId = utils:k_hash(ValueToFind, K),
     Result = ?MODULE:find_k_nearest_node(RoutingTable, HashId, BucketSize, K),
     {reply, Result, State};
 % Handles any unrecognized request by replying with an error.

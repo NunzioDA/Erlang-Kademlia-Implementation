@@ -7,9 +7,9 @@
 
 -module(node).
 -behaviour(gen_server).
--export([init/1, handle_call/3, handle_cast/2, terminate/2, kill/1, handle_info/2]).
+-export([init/1, handle_call/3, handle_cast/2, terminate/2, kill/1, handle_info/2, get_my_value_table/1]).
 -export([start/3, start/4, ping/1, distribute_value/5, send_request/4, lookup/3, shell_find_nearest_nodes/2]).
--export([distribute/3, lookup/2, get_routing_table/1, talk/1, shut/1, start_server/4]).
+-export([distribute/3, lookup/2, get_routing_table/1, talk/1, shut/1, start_server/4, get_value_table/1]).
 -export([save_node/4, branch_lookup/2, find_node/7, find_node/4, get_value/3, request_handler/3, delete_node/3]).
 -export([async_request_handler/2, find_k_nearest_node/6, lookup_for_value/5, find_k_nearest_node/4, send_ping/2]).
 
@@ -90,6 +90,29 @@ init([K, T, InitAsBootstrap, Verbose]) ->
 get_routing_table(NodePid) when is_pid(NodePid)->
     try
         gen_server:call(NodePid, {routing_table}, 120000)
+    catch 
+        Err -> utils:debug_print("~p",[Err])
+    end
+.
+
+% This function is used for debugging purposes
+% allowing to print the values table in the shell
+% by sending a value_table request to the given Pid
+get_value_table(NodePid) when is_pid(NodePid)->
+    try
+        gen_server:call(NodePid, {value_table}, 120000)
+    catch 
+        Err -> utils:debug_print("~p",[Err])
+    end
+.
+
+% This function is used for debugging purposes
+% allowing to print the table containing the values
+% published by the specified node in the shell
+% by sending a my_value_table request to the given Pid
+get_my_value_table(NodePid) when is_pid(NodePid)->
+    try
+        gen_server:call(NodePid, {my_value_table}, 120000)
     catch 
         Err -> utils:debug_print("~p",[Err])
     end
@@ -326,6 +349,18 @@ handle_call({routing_table}, _From, State) ->
     {RoutingTable, _, _, _, _, _} = State,
     % Return = utils:print_routing_table(RoutingTable, com:my_hash_id(K)),
     {reply, {ok, ets:tab2list(RoutingTable)}, State};
+% This request is used to print the value table
+% of a specific node.
+% This is used in the shell to debugging purposes.
+handle_call({value_table}, _From, State) ->
+    {_, ValuesTable, _, _, _, _} = State,
+    {reply, {ok, ets:tab2list(ValuesTable)}, State};
+% This request is used to print the table containing
+% the values published by the node.
+% This is used in the shell to debugging purposes.
+handle_call({my_value_table}, _From, State) ->
+    {_, _, _, _, _, MyValuesTable} = State,
+    {reply, {ok, ets:tab2list(MyValuesTable)}, State};
 % Handling synchronous requests to the node.
 % The sending node of the request is stored in the recipient's routing table.
 handle_call({Request, SenderPid}, _, State) ->  
@@ -556,7 +591,7 @@ find_k_nearest_node(RoutingTable, HashID, BucketSize, K) ->
     % Retrieve the initial list of closest nodes from the routing table.
     NodeList = ?MODULE:find_node(RoutingTable, BucketSize, K, HashID),
     % Begin the recursive search to refine the closest node list.
-    ?MODULE:find_k_nearest_node(RoutingTable, HashID, BucketSize, K, NodeList, [])
+    ?MODULE:find_k_nearest_node(RoutingTable, HashID, BucketSize, K, NodeList, [{com:my_hash_id(K), com:my_address()}])
 .
 
 % Base case: If there are no more nodes to contact, return the sorted list of the K 
@@ -575,9 +610,7 @@ find_k_nearest_node(RoutingTable, HashID, BucketSize, K, [{NodeHash, NodePid}|T]
             % Filter the returned node list to exclude nodes already contacted or com:my_address.
             FilteredNodeList = lists:filter(
                 fun(Node) -> 
-                    {_, FilterPid} = Node,
-                    not lists:member(Node, ContactedNodes) andalso
-                    FilterPid /= com:my_address()
+                    not lists:member(Node, ContactedNodes)
                 end, 
                 NodeList
             ),
@@ -631,8 +664,3 @@ lookup_for_value(Key, K, [{_, Pid} | T], ContactedNodes, RoutingTable) ->
         _ -> ?MODULE:lookup_for_value(Key,K, T, [Pid | ContactedNodes],RoutingTable)
     end
 .
-
-
-
-
-

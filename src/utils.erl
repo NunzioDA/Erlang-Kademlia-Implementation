@@ -236,7 +236,11 @@ print_centered_rectangle(Content, RealMessageLength) ->
 % The routing table has to be passed as a list of tuples
 % as the output of ets:tab2list.
 % The function prints the routing table in a formatted way.
-print_routing_table(RoutingTableToList) ->
+print_routing_table(Pid) when is_pid(Pid) ->
+    {ok,RoutingTable} = node:get_routing_table(Pid),
+    ?MODULE:print_routing_table(RoutingTable)
+;
+print_routing_table(RoutingTableToList) when is_list(RoutingTableToList) ->
     RoutingTable = lists:sort(
         fun({Key1, _}, {Key2, _}) -> 
             Key1 < Key2

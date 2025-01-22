@@ -264,7 +264,7 @@ test_dying_process() ->
     utils:print("~nAsking bootstrap to store value so it tries to contact [~p]~n",[RandomPid]),
     node:distribute(BootstrapNode,"foo", 0),
     
-    ?MODULE:wait_for_stores(Nodes - 1),
+    ?MODULE:wait_for_stores(Nodes),
     
     {ok, NewRoutingTable} = node:get_routing_table(BootstrapNode),
     utils:print("~n~nNew routing table of the bootstrap node [~p] : ~n~n",[BootstrapNode]),

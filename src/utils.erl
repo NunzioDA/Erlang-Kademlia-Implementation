@@ -26,8 +26,21 @@ to_bit_list(<<Bit:1/bits, Rest/bits>>) ->
 .
 
 % This function is used to create a K-bit hash from a given data.
-k_hash(Data, K) when is_pid(Data) ->
-    k_hash(pid_to_list(Data), K);
+k_hash(Pid, K) when is_pid(Pid) ->
+    PidToList = pid_to_list(Pid),
+    % Removing the erlang node name from the pid
+    % to avoid that the same process on different nodes
+    % has different hash values.
+    LocalPid = case string:find(PidToList, ".") of
+        error ->
+            PidToList;
+        String ->
+            String
+    end,
+    NodeToString = atom_to_list(node(Pid)),
+    % Creo il plaintext concatenando il nome del nodo e il pid
+    PlainText = NodeToString ++ LocalPid,
+    k_hash(PlainText, K);
 k_hash(Data, K) when is_integer(K), K > 0 -> 
     Hash = crypto:hash(sha256, Data),
     % Takes the first K bits of the hash

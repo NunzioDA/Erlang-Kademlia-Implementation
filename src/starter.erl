@@ -114,7 +114,7 @@ start_test_environment(K,T) ->
     ?MODULE:registerShell(),
     bootstrap_list_manager:start(),
     bootstrap_list_manager:wait_for_initialization(),
-    analytics_collector:start(K,T, self()),
+    analytics_collector:start(K,T),
     analytics_collector:wait_for_initialization()    
 .
 

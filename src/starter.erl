@@ -112,6 +112,8 @@ start_test(TestFunction) ->
 % the shell pid
 start_test_environment(K,T) ->
     ?MODULE:registerShell(),
+    bootstrap_list_manager:start(),
+    bootstrap_list_manager:wait_for_initialization(),
     analytics_collector:start(K,T, self()),
     analytics_collector:wait_for_initialization()    
 .
@@ -221,6 +223,7 @@ destroy() ->
         AllProcesses
     ),
     analytics_collector:kill()
+    % bootstrap_list_manager:kill()
     % exit(self(),kill)
 .
 
@@ -247,7 +250,7 @@ test_dying_process() ->
         T, 
         [stored_value]
     ),
-    [BootstrapNode|_] = analytics_collector:get_bootstrap_list(),
+    [BootstrapNode|_] = bootstrap_list_manager:get_bootstrap_list(),
     
     
     utils:print("~nRequiring routing table to the bootstrapnode[~p]...~n",[BootstrapNode]),
@@ -355,7 +358,7 @@ test_lookup_meantime() ->
     ),
 
     utils:print("~nSaving 'foo' => 0 in the network...~n"),
-    [BootstrapNode | _] = analytics_collector:get_bootstrap_list(),
+    [BootstrapNode | _] = bootstrap_list_manager:get_bootstrap_list(),
     node:distribute(BootstrapNode,"foo", 0),
     % Waiting to make sure the value is delivered
     ?MODULE:wait_for_stores(20),
@@ -405,7 +408,7 @@ test_republisher() ->
     ?MODULE:start_simulation(BootstrapNodes, Nodes, K, T, [stored_value]),
     
 
-    [BootstrapNode | _] = analytics_collector:get_bootstrap_list(),
+    [BootstrapNode | _] = bootstrap_list_manager:get_bootstrap_list(),
     utils:print("~nSaving 'foo' => 0 in the network with node ~p...~n", [BootstrapNode]),
     node:distribute(BootstrapNode,"foo", 0),    
     ?MODULE:wait_for_stores(20),

@@ -67,7 +67,7 @@ check_for_empty_branches(RoutingTable, K, BucketSize) ->
 % This function is used to pick a random bootstrap node
 % from those signaled to the analytics_collector
 pick_bootstrap() ->
-    BootstrapList = analytics_collector:get_bootstrap_list(),
+    BootstrapList = bootstrap_list_manager:get_bootstrap_list(),
 
     Length = length(BootstrapList),
 
@@ -85,7 +85,7 @@ pick_bootstrap() ->
 
 % This function is used to get the nearest bootstrap node to this node
 nearest_bootstrap(K) ->
-    BootstrapList = analytics_collector:get_bootstrap_list(),
+    BootstrapList = bootstrap_list_manager:get_bootstrap_list(),
     %converting the list to a list of {hash, pid}
     BootstrapListFiltered =lists:foldl(
         fun(Pid, Acc) ->

@@ -7,16 +7,16 @@
 % -----------------------------------------------------------------------------
 
 -module(analytics_collector).
--behaviour(gen_server).
+-behaviour(singleton).
 
 -export([init/1, handle_call/3, handle_cast/2, listen_for/1, notify_listeners/3, kill/0, enroll_node/0, stored_value/1]).
--export([start/3, enroll_bootstrap/0, get_node_list/0, started_join_procedure/0, get_started_join_nodes/0, flush_join_events/0]).
+-export([start/2, get_node_list/0, started_join_procedure/0, get_started_join_nodes/0, flush_join_events/0]).
 -export([finished_join_procedure/1, get_unfinished_join_nodes/0, get_finished_join_nodes/0, flush_lookups_events/0, shut/0]).
--export([start_server/3, add/2, get_events/1, make_request/2, calculate_mean_time/2, register_new_event/4, empty_event_list/1]).
+-export([add/2, get_events/1, make_request/2, calculate_mean_time/2, register_new_event/4, empty_event_list/1]).
 -export([started_time_based_event/1, started_lookup/0, finished_time_based_event/2, finished_lookup/1, lookup_mean_time/0]).
--export([get_started_lookup/0, get_bootstrap_list/0, join_procedure_mean_time/0, get_nodes_that_stored/1,get_finished_lookup/0]).
+-export([get_started_lookup/0, join_procedure_mean_time/0, get_nodes_that_stored/1,get_finished_lookup/0]).
 -export([get_started_distribute/0,get_finished_distribute/0, flush_distribute_events/0, started_distribute/0, finished_distribute/1]).
--export([distribute_mean_time/0, flush_nodes_that_stored/0, time_based_event_mean_time/2, get_simulation_parameters/0, register/0]).
+-export([distribute_mean_time/0, flush_nodes_that_stored/0, time_based_event_mean_time/2, get_simulation_parameters/0]).
 -export([started_filling_routing_table/0, finished_filling_routing_table/1, filling_routing_table_mean_time/0, talk/0, location/0]).
 -export([get_started_filling_routing_table_nodes/0, get_finished_filling_routing_table_nodes/0, notify_server_is_running/1]).
 -export([flush_filling_routing_table_events/0, get_unfinished_filling_routing_table_nodes/0, wait_for_initialization/0, create_events_table/0]).
@@ -27,21 +27,8 @@
 % This function is used to start the analytics collector.
 % If an instance is already running it returns a warning.
 % Otherwise it starts a new instance.
-start(K, T, ListenerPid) ->
-	Pid = ?MODULE:location(),
-
-	if Pid == undefined ->
-    	?MODULE:start_server(K,T,ListenerPid);
-	true ->
-		?MODULE:notify_server_is_running(ListenerPid),
-		{warning, "An instance of analytics_collector is already running."}
-	end
-.
-
-% This functions starts a gen_server process
-start_server(K, T, ListenerPid) ->
-    {ok, Pid} = gen_server:start(?MODULE, [K, T, ListenerPid], []),
-    Pid
+start(K, T) ->
+	singleton:start(?MODULE, [K, T], local)
 .
 
 %--------------------------------------------------
@@ -51,15 +38,7 @@ start_server(K, T, ListenerPid) ->
 %------------------------------------
 % Add event methods
 %------------------------------------
-%
-%--------------------------------------------
-% Bootstrap and processes
-%
-% This function is used to enroll a process as 
-% a bootstrap node
-enroll_bootstrap() ->
-	?MODULE:add(bootstrap, 1)
-.
+
 % This functin is used to enrol a process as 
 % a node
 enroll_node()->
@@ -295,19 +274,7 @@ distribute_mean_time() ->
 	time_based_event_mean_time(started_distribute,finished_distribute).
 
 %--------------------------------------------
-% Bootstrap and processes
-%
-% This function returns all the processes that have
-% enrolled as bootstrap nodes
-get_bootstrap_list() ->
-	lists:foldl(
-		fun({Pid,_,_}, Acc) ->
-			[Pid|Acc]
-		end,
-		[],
-		?MODULE:get_events(bootstrap)
-	)
-.
+% Processes
 
 % This function returns all the processes that have
 % enrolled as nodes
@@ -536,11 +503,10 @@ notify_server_is_running(ListenerPid)->
 % This function is called to initialize the gen_server.
 % It registers the analytics_collector Pid and creates the analytics ets to
 % collect data.
-init([K, T, ListenerPid]) ->
-	?MODULE:register(),
+init([ListenerPid, K, T]) ->
 	?MODULE:create_events_table(),
 	ListenersMap = #{},
-	?MODULE:notify_server_is_running(ListenerPid),
+	singleton:notify_server_is_running(ListenerPid, ?MODULE),
 	{ok, {K, T, ListenersMap}}
 .
 
@@ -592,10 +558,7 @@ handle_cast({new_listener, Pid, EventType}, State) ->
 % Use this function only after using start/3 function
 % passing self() as the third parameter.
 wait_for_initialization() ->
-	receive 
-        {analytics_collector_running} ->
-            ok
-    end
+	singleton:wait_for_initialization(?MODULE)
 .
 
 % This function is used to kill the analytics collector
@@ -612,9 +575,6 @@ kill() ->
 % This function is used to get 
 % the Pid of the analytics collector 
 location() ->
-	whereis(analytics_collector).
+    singleton:location(local, ?MODULE)
+.
 
-% This function is used to register 
-% the analytics collector globally
-register() ->
-	register(analytics_collector, self()).

@@ -612,9 +612,9 @@ kill() ->
 % This function is used to get 
 % the Pid of the analytics collector 
 location() ->
-	global:whereis_name(analytics_collector).
+	whereis(analytics_collector).
 
 % This function is used to register 
 % the analytics collector globally
 register() ->
-	global:register_name(analytics_collector, self()).
+	register(analytics_collector, self()).

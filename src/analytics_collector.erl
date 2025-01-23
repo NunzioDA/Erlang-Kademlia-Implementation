@@ -16,10 +16,10 @@
 -export([started_time_based_event/1, started_lookup/0, finished_time_based_event/2, finished_lookup/1, lookup_mean_time/0]).
 -export([get_started_lookup/0, get_bootstrap_list/0, join_procedure_mean_time/0, get_nodes_that_stored/1,get_finished_lookup/0]).
 -export([get_started_distribute/0,get_finished_distribute/0, flush_distribute_events/0, started_distribute/0, finished_distribute/1]).
--export([distribute_mean_time/0, flush_nodes_that_stored/0, time_based_event_mean_time/2, get_simulation_parameters/0]).
--export([started_filling_routing_table/0, finished_filling_routing_table/1, filling_routing_table_mean_time/0, talk/0]).
+-export([distribute_mean_time/0, flush_nodes_that_stored/0, time_based_event_mean_time/2, get_simulation_parameters/0, register/0]).
+-export([started_filling_routing_table/0, finished_filling_routing_table/1, filling_routing_table_mean_time/0, talk/0, location/0]).
 -export([get_started_filling_routing_table_nodes/0, get_finished_filling_routing_table_nodes/0, notify_server_is_running/1]).
--export([flush_filling_routing_table_events/0, get_unfinished_filling_routing_table_nodes/0, wait_for_initialization/0]).
+-export([flush_filling_routing_table_events/0, get_unfinished_filling_routing_table_nodes/0, wait_for_initialization/0, create_events_table/0]).
 % --------------------------------
 % Starting methods
 % --------------------------------
@@ -28,7 +28,7 @@
 % If an instance is already running it returns a warning.
 % Otherwise it starts a new instance.
 start(K, T, ListenerPid) ->
-	Pid = whereis(analytics_collector),
+	Pid = ?MODULE:location(),
 
 	if Pid == undefined ->
     	?MODULE:start_server(K,T,ListenerPid);
@@ -404,7 +404,7 @@ calculate_mean_time(StartedTimes, FinishedTimes) ->
 % ------------------------------------------
 listen_for(EventType) ->
 	Pid = self(),
-	ServerPid = whereis(analytics_collector),
+	ServerPid = ?MODULE:location(),
 	gen_server:cast(ServerPid, {new_listener, Pid, EventType})
 .
 
@@ -419,6 +419,39 @@ listen_for(EventType) ->
 get_simulation_parameters() ->
 	?MODULE:make_request(call, {get_simulation_parameters})
 .
+
+create_events_table() ->
+	ets:new(analytics, [named_table, set, public]).
+
+% This function is used to get the events list of a given type.
+get_events(EventType) ->
+	case ets:lookup(analytics, EventType) of
+		[{_, List}] -> List;
+		_ -> []
+	end
+.
+
+% This function is used to empty 
+% the event list of a given type
+empty_event_list(EventType) ->
+	ets:insert(analytics, {EventType, []})
+.
+
+% This function saves the event to the ets table
+% named analytics.
+register_new_event(Pid, EventType, EventValue, ListenersMap) ->
+	Millis = erlang:monotonic_time(millisecond),
+	NewRecord = {Pid, EventValue, Millis},
+	case ets:lookup(analytics, EventType) of
+		[{_, EventList}] ->
+			NewEventList = EventList ++ [NewRecord],
+			ets:insert(analytics, {EventType, NewEventList});
+		[] ->
+			ets:insert(analytics, {EventType, [NewRecord]})
+	end,
+	?MODULE:notify_listeners(EventType, NewRecord, ListenersMap)
+.
+
 % This request is used for debugging purposes
 % setting verbose to true
 talk() -> 
@@ -433,14 +466,6 @@ shut() ->
 add(EventType, EventValue) ->
 	ClientPid = com:my_address(),
 	?MODULE:make_request(cast, {new_event, ClientPid, EventType, EventValue})
-.
-
-% This function is used to get the events list of a given type.
-get_events(EventType) ->
-	case ets:lookup(analytics, EventType) of
-		[{_, List}] -> List;
-		_ -> []
-	end
 .
 
 % This function is used to signal the start of a time based event.
@@ -494,7 +519,7 @@ notify_listeners(EventType, EventValue, ListenersMap) ->
 % This function allows to make a request to the analytics server
 % analytics server must be started before making requests
 make_request(Type, Request) ->
-	Pid = whereis(analytics_collector),
+	Pid = ?MODULE:location(),
 	if Pid == undefined ->
 		throw({error, "Error: start the analytics_collector before adding events"});
 	true ->
@@ -512,13 +537,16 @@ notify_server_is_running(ListenerPid)->
 % It registers the analytics_collector Pid and creates the analytics ets to
 % collect data.
 init([K, T, ListenerPid]) ->
-	register(analytics_collector, self()),
-	ets:new(analytics, [set, public, named_table]),
+	?MODULE:register(),
+	?MODULE:create_events_table(),
 	ListenersMap = #{},
 	?MODULE:notify_server_is_running(ListenerPid),
 	{ok, {K, T, ListenersMap}}
 .
 
+% This function is used to handle the requests
+% made to the analytics_collector requiring 
+% the simulation parameters K and T
 handle_call({get_simulation_parameters}, _From, State) ->
 	{K,T,_} = State,
 	{reply, {K,T}, State}
@@ -558,25 +586,6 @@ handle_cast({new_listener, Pid, EventType}, State) ->
 	{noreply, {K,T,NewListenersMap}}
 .
 
-empty_event_list(EventType) ->
-	ets:insert(analytics, {EventType, []})
-.
-
-% This function saves the event to the ets table
-% named analytics.
-register_new_event(Pid, EventType, EventValue, ListenersMap) ->
-	Millis = erlang:monotonic_time(millisecond),
-	NewRecord = {Pid, EventValue, Millis},
-	case ets:lookup(analytics, EventType) of
-		[{_,EventList}] ->
-			NewEventList = EventList ++ [NewRecord],
-			ets:insert(analytics, {EventType, NewEventList});
-		[] ->
-			ets:insert(analytics, {EventType, [NewRecord]})
-	end,
-	?MODULE:notify_listeners(EventType, NewRecord, ListenersMap)
-.
-
 % This function is used to wait for
 % the analytics_collector to 
 % finish the init function.
@@ -592,10 +601,20 @@ wait_for_initialization() ->
 % This function is used to kill the analytics collector
 % if it is running.
 kill() ->
-	case whereis(analytics_collector) of
+	case ?MODULE:location() of
 		undefined -> utils:print("There is not any instance of Analytic Collector running");
 		Pid -> 
 			exit(Pid, kill),
 			ets:delete(analytics)
 	end
 .
+
+% This function is used to get 
+% the Pid of the analytics collector 
+location() ->
+	global:whereis_name(analytics_collector).
+
+% This function is used to register 
+% the analytics collector globally
+register() ->
+	global:register_name(analytics_collector, self()).

@@ -67,7 +67,7 @@ init([K, T, InitAsBootstrap, Verbose]) ->
     analytics_collector:enroll_node(),
 
     if InitAsBootstrap ->
-        analytics_collector:enroll_bootstrap();
+        bootstrap_list_manager:enroll_bootstrap();
     true -> ok
     end,
     routing_table_filler:start(K,RoutingTable,Bucket_Size),

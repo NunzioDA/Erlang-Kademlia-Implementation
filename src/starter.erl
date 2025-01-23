@@ -94,7 +94,7 @@ choose_parameters() ->
 
 start_test(TestFunction) ->
     % Check if the analytics_collector is already started
-    case whereis(analytics_collector) of
+    case analytics_collector:location() of
         undefined -> ok;
         _ -> 
             % If it is already started, we need to kill it
@@ -168,7 +168,7 @@ start_simulation(Bootstraps, Nodes, K, T, EventsToListen) ->
 % This function starts the nodes that will join the kademlia network
 start_new_nodes(Bootstraps, Nodes, K, T) ->
 
-    case whereis(analytics_collector) of
+    case analytics_collector:location() of
         undefined ->
             ?MODULE:start_test_environment(K, T),
             CanStart = true;

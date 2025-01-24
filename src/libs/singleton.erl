@@ -6,17 +6,34 @@
 % --------------------------------------------------------------------
 
 -module(singleton).
--export([start/3, start_server/3, make_request/3, location/2, registerSingleton/3, notify_server_is_running/2, wait_for_initialization/1]).
+-export([start/3, start_server/4, make_request/3, location/2, notify_server_is_running/2]).
+-export([initialization_event_name/1, wait_for_initialization/1]).
 
--type from() ::	{Client :: pid(), Tag :: gen:reply_tag()}.
-
+% ---------------------------------
+% singleton callbacks
+% ---------------------------------
+%
+% The following callbacks must be implemented by the module
+%
+% This function returns the location of the singleton server
+% It should call singleton:location/2 function with the appropriate arguments:
+% - Type can be either global or local
+% - Module is the module implementing the singleton server
 -callback location() -> 
     Pid :: pid().
+%
+% This function is called when the singleton server is started
+% It should call singleton:wait_for_initialization/1 function 
+% with the appropriate arguments:
+% - Module is the module implementing the singleton server
 -callback wait_for_initialization() -> 
     Result :: term().
 
-% Ensuring the module initializes
-% gen_server behaviour
+% ---------------------------------
+% gen_server callbacks and types
+% ---------------------------------
+-type from() ::	{Client :: pid(), Tag :: gen:reply_tag()}.
+
 -callback init(Args :: term()) ->
     {ok, State :: term()} |
     {ok, State :: term(), timeout() | hibernate | {continue, term()}} |
@@ -48,8 +65,7 @@ start(Module, Args, Type) when is_atom(Module) ->
 	Pid = ?MODULE:location(Type, Module),
 
 	if Pid == undefined ->
-    	NewSingletonPid = ?MODULE:start_server(ListenerPid, Module, Args),
-        ?MODULE:registerSingleton(Type, NewSingletonPid, Module);
+    	?MODULE:start_server(Type, ListenerPid, Module, Args);
 	true ->
 		?MODULE:notify_server_is_running(ListenerPid, Module),
 		{warning, "An instance of " ++ atom_to_list(Module) ++ " is already running."}
@@ -58,8 +74,8 @@ start(Module, Args, Type) when is_atom(Module) ->
 
 % This function starts the gen_server
 % and returns the Pid
-start_server(ListenerPid, Module, Args) ->
-    {ok, Pid} = gen_server:start(Module, [ListenerPid] ++ Args, []),
+start_server(Type, ListenerPid, Module, Args) ->
+    {ok, Pid} = gen_server:start({Type, Module}, Module, [ListenerPid] ++ Args, []),
     Pid
 .
 
@@ -93,16 +109,7 @@ location(Type, Module) ->
     end
 .
 
-% This function registers the singleton server
-registerSingleton(Type, Pid, Module) ->
-    case Type of
-        global -> global:register_name(Module, Pid);
-        local -> register(Module, Pid);
-        _ -> throw({error, "Error: location type, must be either global or local"})
-    end
-.
-
-initialization_event(Module) ->
+initialization_event_name(Module) ->
     AtomInitializationEvent = atom_to_list(Module) ++ "_running",
     AtomInitializationEvent
 .
@@ -110,7 +117,7 @@ initialization_event(Module) ->
 % This function notifies the 
 % listener that the server is running
 notify_server_is_running(ListenerPid, Module)->
-    AtomInitializationEvent = initialization_event(Module),
+    AtomInitializationEvent = ?MODULE:initialization_event_name(Module),
 	ListenerPid ! {AtomInitializationEvent}.
 
 % This function is used to wait for
@@ -119,7 +126,7 @@ notify_server_is_running(ListenerPid, Module)->
 % Use this function only after 
 % using start/3 function.
 wait_for_initialization(Module) ->
-    AtomInitializationEvent = initialization_event(Module),
+    AtomInitializationEvent = ?MODULE:initialization_event_name(Module),
 	receive 
         {AtomInitializationEvent} ->
             ok

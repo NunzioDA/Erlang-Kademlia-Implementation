@@ -22,7 +22,8 @@
 -callback location() -> 
     Pid :: pid().
 %
-% This function is called when the singleton server is started
+% This function is called to wait for the singleton server 
+% to finish the init function.
 % It should call singleton:wait_for_initialization/1 function 
 % with the appropriate arguments:
 % - Module is the module implementing the singleton server

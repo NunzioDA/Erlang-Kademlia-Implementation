@@ -1,17 +1,19 @@
 % -----------------------------------------------------------------------------
-% Module: starter
+% Module: simulation
 % Author(s): Nunzio D'Amore, Francesco Rossi
-% Date: 2024-12-20
-% Description: This module starts the Kademlia network simulation.
+% Date: 2025-01-25
+% Description: This module manages the simulation providing an interface
+%              to interact and choose between different available tests.
 % -----------------------------------------------------------------------------
 
--module(starter).
+-module(simulation).
 
--export([start/0, start_test_environment/2, registerShell/0, start_simulation/4, insert_positive_integer/1]).
--export([wait_for_network_to_converge/1, wait_for_progress/1, destroy/0, wait_for_stores/1]).
--export([choose_test/0, start_test/1,enter_processes_to_kill/1, start_simulation/5, choose_parameters/0]).
+-export([start/0, choose_test/0, start_test/1, choose_parameters/0]).
+-export([start_simulation/4, start_simulation/5]).
+-export([wait_for_network_to_converge/1, wait_for_progress/1, wait_for_stores/1]).
+-export([enter_processes_to_kill/1,insert_positive_integer/1]).
 -export([test_dying_process/0, pick_random_pid/1, test_join_mean_time/0,wait_for_progress/2]).
--export([test_lookup_meantime/0, wait_for_lookups/1, test_republisher/0, start_new_nodes/4]).
+-export([test_lookup_meantime/0, wait_for_lookups/1, test_republisher/0]).
 
 % This function is used to start the simulation
 % It prints the welcome message and the list of tests
@@ -28,6 +30,7 @@ start() ->
     utils:print("5. Exit~n"),
     ?MODULE:choose_test()
 .
+
 
 % This function is used to choose the test to run
 % based on the user input.
@@ -100,35 +103,11 @@ start_test(TestFunction) ->
             % If it is already started, we need to kill it
             % to avoid conflicts with the new test
             utils:print("Cleaning up the environment before starting the test...~n~n"),
-            ?MODULE:destroy(),
-            timer:sleep(1000) % Wait for the processes to die
+            kademlia:destroy()
     end,
     TestFunction()
 .
 
-% This function is used to start the environment
-% before starting the simulation
-% It starts the analytics_collector and registers
-% the shell pid
-start_test_environment(K,T) ->
-    ?MODULE:registerShell(),
-    bootstrap_list_manager:start(),
-    bootstrap_list_manager:wait_for_initialization(),
-    analytics_collector:start(K,T),
-    analytics_collector:wait_for_initialization()    
-.
-
-% The shell pid is registered
-% so that all the processes can
-% avoid saving shell pid when 
-% receiving a command from the shell
-registerShell() ->
-    ShellPid = whereis(shellPid),
-    if (ShellPid == undefined) ->
-        register(shellPid, self());
-    true -> ok
-    end
-.
 
 % This function starts a Kademlia simulation by
 % starting the simulation enviroment and waiting for network
@@ -145,7 +124,7 @@ start_simulation(Bootstraps, Nodes, K, T) ->
 .
 start_simulation(Bootstraps, Nodes, K, T, EventsToListen) ->
 
-    ?MODULE:start_test_environment(K, T),
+    kademlia:start_enviroment(K, T),
     % Subscribing to finished_filling_routing_table 
     % to listen for network convergence
     analytics_collector:listen_for(finished_filling_routing_table),
@@ -159,72 +138,12 @@ start_simulation(Bootstraps, Nodes, K, T, EventsToListen) ->
     ),
 
     % Starting the network
-    ?MODULE:start_new_nodes(Bootstraps, Nodes, K, T),
+    kademlia:start_new_nodes(Bootstraps, Nodes, K, T),
 
     utils:print("Waiting for the network to converge~n"),
     TotalNodes = Nodes + Bootstraps,
     ?MODULE:wait_for_network_to_converge(TotalNodes),
     ok
-.
-
-% This function starts the nodes that will join the kademlia network
-start_new_nodes(Bootstraps, Nodes, K, T) ->
-
-    case analytics_collector:location() of
-        undefined ->
-            ?MODULE:start_test_environment(K, T),
-            CanStart = true;
-        _ -> 
-            utils:print("An existing enviroment has been found: "),
-            case analytics_collector:get_simulation_parameters() of
-                {ExistingK, _} ->
-                    if(ExistingK /= K) ->
-                        utils:print("~n[ERROR] -> Inconsistent K parameter. ~n"),
-                        utils:print("Can't start new nodes with a different K value.~n~n"),
-                        utils:print("(Existing) ~p =/= ~p (New K).~n", [ExistingK, K]),
-                        utils:print("Please ensure the parameter K is consistent.~n~n"),
-                        CanStart = false;
-                    true ->
-                        utils:print("adding nodes to the network.~n~n"),
-                        CanStart = true
-                    end;                    
-                _ -> CanStart = false
-            end
-    end,    
-
-    if CanStart ->
-        utils:print("Starting ~p bootstrap nodes and ~p other nodes~n", [Bootstraps, Nodes]),
-        utils:print("~p bit for the hash and ~p millis for republishing~n~n", [K, T]),
-        lists:foreach(
-            fun(_) ->
-                node:start(K, T, true)
-            end,
-            lists:seq(1, Bootstraps)
-        ),
-        lists:foreach(
-            fun(_) ->
-                node:start(K, T, false)
-            end,
-            lists:seq(1, Nodes)
-        );
-    true ->
-        ok
-    end
-.
-
-% This function is used to destroy the simulation
-% It kills all the processes and the analytics_collector
-destroy() ->
-    AllProcesses = analytics_collector:get_node_list(),
-    lists:foreach(
-        fun(Pid) ->
-            node:kill(Pid)
-        end,
-        AllProcesses
-    ),
-    analytics_collector:kill()
-    % bootstrap_list_manager:kill()
-    % exit(self(),kill)
 .
 
 % -------------------------------------------------

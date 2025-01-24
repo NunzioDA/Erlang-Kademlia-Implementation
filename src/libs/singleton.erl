@@ -1,3 +1,10 @@
+% --------------------------------------------------------------------
+% Module: singleton
+% Author(s): Nunzio D'Amore, Francesco Rossi
+% Date: 2025-01-23
+% Description: This module provides a generic singleton server based on gen_server.
+% --------------------------------------------------------------------
+
 -module(singleton).
 -export([start/3, start_server/3, make_request/3, location/2, registerSingleton/3, notify_server_is_running/2, wait_for_initialization/1]).
 
@@ -34,6 +41,8 @@
      timeout() | hibernate | {continue, term()}} |
     {stop, Reason :: term(), NewState :: term()}.
 
+% This function starts the singleton server
+% if it is not already running
 start(Module, Args, Type) when is_atom(Module) ->
     ListenerPid = self(),
 	Pid = ?MODULE:location(Type, Module),
@@ -47,17 +56,22 @@ start(Module, Args, Type) when is_atom(Module) ->
 	end
 .
 
+% This function starts the gen_server
+% and returns the Pid
 start_server(ListenerPid, Module, Args) ->
     {ok, Pid} = gen_server:start(Module, [ListenerPid] ++ Args, []),
     Pid
 .
 
-% This function allows to make a request to the analytics server
-% analytics server must be started before making requests
+% This function allows to make a request to the singleton server
+% The server must be started before making requests 
+% Type can be either call or cast
+% Request is the request to be made
+% Module is the module implementing the singleton server
 make_request(Type, Request, Module) when is_atom(Type) ->
 	Pid = Module:location(),
 	if Pid == undefined ->
-		throw({error, "Error: start the server before adding events"});
+		throw({error, "Error: start the " ++ atom_to_list(Module) ++ " server before adding events"});
 	true ->
 		case Type of
 			call -> gen_server:call(Pid, Request);
@@ -69,6 +83,8 @@ make_request(Type, Request, Module) when is_atom(Type) ->
 
 % This function returns the location 
 % of the singlet server
+% Type can be either global or local
+% Module is the module implementing the singleton server
 location(Type, Module) ->
     case Type of
         global -> global:whereis_name(Module);
@@ -98,10 +114,10 @@ notify_server_is_running(ListenerPid, Module)->
 	ListenerPid ! {AtomInitializationEvent}.
 
 % This function is used to wait for
-% the analytics_collector to 
+% the singleton server to 
 % finish the init function.
-% Use this function only after using start/3 function
-% passing self() as the third parameter.
+% Use this function only after 
+% using start/3 function.
 wait_for_initialization(Module) ->
     AtomInitializationEvent = initialization_event(Module),
 	receive 

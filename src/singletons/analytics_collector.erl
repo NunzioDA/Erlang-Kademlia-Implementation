@@ -7,7 +7,6 @@
 % -----------------------------------------------------------------------------
 
 -module(analytics_collector).
--behaviour(singleton).
 
 -export([init/1, handle_call/3, handle_cast/2, listen_for/1, notify_listeners/3, kill/0, enroll_node/0, stored_value/1]).
 -export([start/2, get_node_list/0, started_join_procedure/0, get_started_join_nodes/0, flush_join_events/0]).
@@ -20,6 +19,8 @@
 -export([started_filling_routing_table/0, finished_filling_routing_table/1, filling_routing_table_mean_time/0, talk/0, location/0]).
 -export([get_started_filling_routing_table_nodes/0, get_finished_filling_routing_table_nodes/0, notify_server_is_running/1]).
 -export([flush_filling_routing_table_events/0, get_unfinished_filling_routing_table_nodes/0, wait_for_initialization/0, create_events_table/0]).
+
+-behaviour(singleton).
 % --------------------------------
 % Starting methods
 % --------------------------------

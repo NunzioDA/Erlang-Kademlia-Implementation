@@ -26,24 +26,24 @@
     compiler:compile().
     ```
 
-4. Use the starter module to start the simulation:
+4. Use the simulation module to start the simulation:
 
     ```erlang
-    starter:start().
+    simulation:start().
     ```
 
 ## Shell commands
 Use the following commands to start a custom simulation and control the network.
-### Starter commands
+### Kademlia commands
 1. Use start_new_nodes/4 to start a network or to add new nodes to a previousely started network (In this case keep K consistent with the existing nodes):
 
     ```erlang
-    starter:start_new_nodes(Bootstraps, Nodes, K, T).
+    kademlia:start_new_nodes(Bootstraps, Nodes, K, T).
     ```
 2. If, on the other hand, you do not wish to add new nodes but rather initiate a new network, destroy the previously started network before using start_new_nodes/4:
 
     ```erlang
-    starter:destroy().
+    kademlia:destroy().
     ```
 ### Nodes information
 1. Getting enrolled bootstrap nodes:

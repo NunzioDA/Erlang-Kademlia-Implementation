@@ -89,8 +89,8 @@ destroy() ->
         end,
         AllProcesses
     ),
-    analytics_collector:kill()
-    % bootstrap_list_manager:kill()
+    analytics_collector:kill(),
+    bootstrap_list_manager:kill()
     % exit(self(),kill)
 .
 

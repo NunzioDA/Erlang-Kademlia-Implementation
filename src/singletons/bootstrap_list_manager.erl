@@ -1,4 +1,4 @@
-% ----------------------------------------
+% --------------------------------------------------------------------
 % Module: bootstrap_list_manager
 % Author(s): Nunzio D'Amore, Francesco Rossi
 % Date: 2025-01-23
@@ -8,7 +8,7 @@
 -module(bootstrap_list_manager).
 
 -export([init/1, handle_call/3, handle_cast/2, enroll_bootstrap/0, get_bootstrap_list/0]).
--export([start/0, location/0]).
+-export([start/0, location/0, enroll_erl_node/0, get_erl_nodes/0]).
 -export([wait_for_initialization/0, kill/0]).
 
 -behaviour(singleton).
@@ -30,6 +30,12 @@ wait_for_initialization() ->
 	singleton:wait_for_initialization(?MODULE)
 .
 
+% This function is used from erlang nodes
+% to enroll themselves as erlang nodes
+enroll_erl_node() ->
+    ErlNode = node(),
+    singleton:make_request(cast, {enroll_erl_node, ErlNode}, ?MODULE).
+
 % This function is used from nodes
 % to enroll themselves as bootstrap nodes
 enroll_bootstrap() ->
@@ -42,20 +48,49 @@ get_bootstrap_list() ->
     BootstrapList
 .
 
+get_erl_nodes() ->
+    {ok, ErlNodesList} = singleton:make_request(call, {get_erl_nodes_list}, ?MODULE),
+    ErlNodesList
+.
+
 % This function initializes the bootstrap_list_manager
 init([ListenerPid]) ->
     singleton:notify_server_is_running(ListenerPid, ?MODULE),
     BootstrapList = [],
-	{ok, BootstrapList}.
+    ErlNodeList = [],
+	{ok, {BootstrapList, ErlNodeList}}
+.
 
 % This function handles the get_bootstrap_list call
-handle_call({get_bootstrap_list}, _, BootstrapList) ->    
-	{reply, {ok,BootstrapList}, BootstrapList}.
+handle_call({get_bootstrap_list}, _, State) ->  
+    {BootstrapList,_} = State,
+	{reply, {ok,BootstrapList}, State}
+;
+% This function handles the get_erl_nodes_list call
+% It returns the list of erlang nodes
+handle_call({get_erl_nodes_list}, _, State) ->  
+    {_,ErlNodes} = State,
+	{reply, {ok,ErlNodes}, State}
+.
 
 % This function handles the enroll_bootstrap cast
 % It adds the node in From to the list of bootstrap nodes
-handle_cast({enroll_bootstrap,From}, BootstrapList) ->
-	{noreply, [From | BootstrapList]}.
+handle_cast({enroll_bootstrap,From}, State) ->
+    {BootstrapList,ErlNodeList} = State,
+	{noreply, {[From | BootstrapList], ErlNodeList}}
+;
+% This function handles the enroll_erl_node
+% It adds the node to the list of erlang nodes
+% if it is not already present
+handle_cast({enroll_erl_node,Node}, State) ->
+    {BootstrapList,ErlNodeList} = State,
+    case lists:member(Node, ErlNodeList) of
+        true -> 
+            {noreply, {BootstrapList, ErlNodeList}};
+        false -> 
+            {noreply, {BootstrapList, [Node | ErlNodeList]}}
+    end
+.
 
 % This function kills the bootstrap_list_manager
 kill() ->

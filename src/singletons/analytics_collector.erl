@@ -13,11 +13,11 @@
 -export([finished_join_procedure/1, get_unfinished_join_nodes/0, get_finished_join_nodes/0, flush_lookups_events/0, shut/0]).
 -export([add/2, get_events/1, make_request/2, calculate_mean_time/2, register_new_event/4, empty_event_list/1]).
 -export([started_time_based_event/1, started_lookup/0, finished_time_based_event/2, finished_lookup/1, lookup_mean_time/0]).
--export([get_started_lookup/0, join_procedure_mean_time/0, get_nodes_that_stored/1,get_finished_lookup/0]).
+-export([get_started_lookup/0, join_procedure_mean_time/0, get_nodes_that_stored/1,get_finished_lookup/0, aggregate_results/1]).
 -export([get_started_distribute/0,get_finished_distribute/0, flush_distribute_events/0, started_distribute/0, finished_distribute/1]).
 -export([distribute_mean_time/0, flush_nodes_that_stored/0, time_based_event_mean_time/2, get_simulation_parameters/0]).
 -export([started_filling_routing_table/0, finished_filling_routing_table/1, filling_routing_table_mean_time/0, talk/0, location/0]).
--export([get_started_filling_routing_table_nodes/0, get_finished_filling_routing_table_nodes/0, notify_server_is_running/1]).
+-export([get_started_filling_routing_table_nodes/0, get_finished_filling_routing_table_nodes/0, notify_server_is_running/1, aggregate_call/2]).
 -export([flush_filling_routing_table_events/0, get_unfinished_filling_routing_table_nodes/0, wait_for_initialization/0, create_events_table/0]).
 
 -behaviour(singleton).
@@ -376,6 +376,39 @@ listen_for(EventType) ->
 	gen_server:cast(ServerPid, {new_listener, Pid, EventType})
 .
 
+% ------------------------------------------
+% AGGREGATION FUNCTIONS
+% ------------------------------------------
+%
+% 
+aggregate_results(Function) ->
+	Results = ?MODULE:aggregate_call(Function, []),
+	Sum = lists:foldl(
+		fun(Result, Acc) -> 
+			Result + Acc
+		end,
+		0,
+		Results	
+	),
+	case length(Results) of
+		0 -> 0;
+		_ -> Sum div length(Results)
+	end
+.
+% This function is used to make an aggregate call
+% to the analytics_collector on all the erlang nodes
+aggregate_call(Function, Args) ->
+	ErlNodes = bootstrap_list_manager:get_erl_nodes(),
+	Results = lists:foldl(
+		fun(Node, Acc) ->
+			Acc ++ [rpc:call(Node, analytics_collector, Function, Args)]
+		end,
+		[],
+		ErlNodes
+	),
+	Results
+.
+
 
 % -------------------------------------------	
 % GENERIC FUNCTIONS
@@ -497,7 +530,7 @@ make_request(Type, Request) ->
 		end
 	end
 .
-
+% This function is used to notify that the server is running
 notify_server_is_running(ListenerPid)->
 	ListenerPid ! {analytics_collector_running}.
 
@@ -507,6 +540,7 @@ notify_server_is_running(ListenerPid)->
 init([ListenerPid, K, T]) ->
 	?MODULE:create_events_table(),
 	ListenersMap = #{},
+	bootstrap_list_manager:enroll_erl_node(),
 	singleton:notify_server_is_running(ListenerPid, ?MODULE),
 	{ok, {K, T, ListenersMap}}
 .

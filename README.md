@@ -22,7 +22,7 @@
 3. Compile the modules using the module compiler:
 
     ```sh
-    c(compiler).
+    c('./compiler/compiler.erl').
     compiler:compile().
     ```
 

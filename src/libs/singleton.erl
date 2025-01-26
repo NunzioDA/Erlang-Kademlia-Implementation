@@ -7,7 +7,7 @@
 
 -module(singleton).
 -export([start/3, start_server/4, make_request/3, location/2, notify_server_is_running/2]).
--export([initialization_event_name/1, wait_for_initialization/1]).
+-export([initialization_event_name/1, wait_for_initialization/1, is_alive/1]).
 
 % ---------------------------------
 % singleton callbacks
@@ -29,6 +29,14 @@
 % - Module is the module implementing the singleton server
 -callback wait_for_initialization() -> 
     Result :: term().
+
+% This callback is used to check 
+% if the singleton server is alive
+% It should call singleton:is_alive/1 
+% function passing 
+% - Module is the module implementing the singleton server
+-callback is_alive() -> 
+    Result :: boolean().
 
 % ---------------------------------
 % gen_server callbacks and types
@@ -110,6 +118,15 @@ location(Type, Module) ->
     end
 .
 
+% This function checks if the singleton server is alive
+is_alive(Module) ->
+    case Module:location() of
+        undefined -> false;
+        _ -> true
+    end
+.
+
+% This function returns the initialization event name
 initialization_event_name(Module) ->
     AtomInitializationEvent = atom_to_list(Module) ++ "_running",
     AtomInitializationEvent

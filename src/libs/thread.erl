@@ -13,6 +13,7 @@
 
 -export([start/1, check_verbose/0, set_verbose/1, kill_all/0, save_thread/1, save_named/2, receive_last_verbose/1]).
 -export([get_threads/0, send_message_to_my_threads/1, kill/1, check_threads_status/0, get_named/1]).
+-export([get_named_from_parent/1, return_named/3]).
 
 start(Function) ->
     ParentAddress = com:my_address(),
@@ -148,14 +149,27 @@ get_named(Name) ->
     case get(Name) of
         undefined -> % It may be a subprocess of the node.
                      % Requiring node dictionary to get thread pid
-            {_,Dictionary} = process_info(com:my_address(), dictionary),
-            case lists:keyfind(Name, 1, Dictionary) of
-                % The named thread is not started
-                false -> undefined;
-                % Returning the named thread pid
-                {Name, ServerPidFound} -> ServerPidFound
-            end;
+            ?MODULE:get_named_from_parent(Name);
         % Returning the named thread pid
         ServerPidFound -> ServerPidFound
     end
+.
+
+% This function is used to get the pid of a thread
+% saved in the parent process dictionary
+get_named_from_parent(Name) ->    
+    com:my_address() ! {thread_get_named, self(), Name},
+    receive 
+        {thread_found_named, Name, ServerPidFound} -> ServerPidFound
+    after 1000 ->
+        undefined
+    end
+.
+
+% This function is used to return the pid of a thread
+% saved in the parent process dictionary
+% It is used by the parent process to return the pid
+% response to the get_named_from_parent/1 function
+return_named(To, Name, Pid) ->
+    To ! {thread_found_named, Name, Pid}
 .

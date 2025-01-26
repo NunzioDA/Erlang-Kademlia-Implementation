@@ -113,7 +113,10 @@ is_alive() ->
 
 % This function kills the bootstrap_list_manager
 kill() ->
-    Pid = ?MODULE:location(),
-    exit(Pid, kill)
+    case ?MODULE:location() of
+        undefined -> ok;
+        Pid ->
+            exit(Pid, kill)
+    end
 .
 

@@ -9,13 +9,13 @@
 -module(analytics_collector).
 
 -export([init/1, handle_call/3, handle_cast/2, listen_for/1, notify_listeners/3, kill/0, enroll_node/0, stored_value/1]).
--export([start/2, get_node_list/0, started_join_procedure/0, get_started_join_nodes/0, flush_join_events/0]).
+-export([start/0, get_node_list/0, started_join_procedure/0, get_started_join_nodes/0, flush_join_events/0]).
 -export([finished_join_procedure/1, get_unfinished_join_nodes/0, get_finished_join_nodes/0, flush_lookups_events/0, shut/0]).
 -export([add/2, get_events/1, make_request/2, calculate_mean_time/2, register_new_event/4, empty_event_list/1]).
 -export([started_time_based_event/1, started_lookup/0, finished_time_based_event/2, finished_lookup/1, lookup_mean_time/0]).
 -export([get_started_lookup/0, join_procedure_mean_time/0, get_nodes_that_stored/1,get_finished_lookup/0, aggregate_results/1]).
 -export([get_started_distribute/0,get_finished_distribute/0, flush_distribute_events/0, started_distribute/0, finished_distribute/1]).
--export([distribute_mean_time/0, flush_nodes_that_stored/0, time_based_event_mean_time/2, get_simulation_parameters/0]).
+-export([distribute_mean_time/0, flush_nodes_that_stored/0, time_based_event_mean_time/2, is_alive/0]).
 -export([started_filling_routing_table/0, finished_filling_routing_table/1, filling_routing_table_mean_time/0, talk/0, location/0]).
 -export([get_started_filling_routing_table_nodes/0, get_finished_filling_routing_table_nodes/0, notify_server_is_running/1, aggregate_call/2]).
 -export([flush_filling_routing_table_events/0, get_unfinished_filling_routing_table_nodes/0, wait_for_initialization/0, create_events_table/0]).
@@ -28,8 +28,8 @@
 % This function is used to start the analytics collector.
 % If an instance is already running it returns a warning.
 % Otherwise it starts a new instance.
-start(K, T) ->
-	singleton:start(?MODULE, [K, T], local)
+start() ->
+	singleton:start(?MODULE, [], local)
 .
 
 %--------------------------------------------------
@@ -400,8 +400,14 @@ aggregate_results(Function) ->
 aggregate_call(Function, Args) ->
 	ErlNodes = bootstrap_list_manager:get_erl_nodes(),
 	Results = lists:foldl(
-		fun(Node, Acc) ->
-			Acc ++ [rpc:call(Node, analytics_collector, Function, Args)]
+		fun(Node, Acc) ->			
+			case net_adm:ping(Node) of
+				% Is alive
+				pong ->
+					Acc ++ [rpc:call(Node, analytics_collector, Function, Args)];
+				% Is not alive
+				_ -> Acc
+			end
 		end,
 		[],
 		ErlNodes
@@ -414,13 +420,6 @@ aggregate_call(Function, Args) ->
 % GENERIC FUNCTIONS
 % -------------------------------------------
 %
-% This function is used to make a request
-% to the analytics_server to get the current
-% simulation parameters K and T
-get_simulation_parameters() ->
-	?MODULE:make_request(call, {get_simulation_parameters})
-.
-
 create_events_table() ->
 	ets:new(analytics, [named_table, set, public]).
 
@@ -537,25 +536,21 @@ notify_server_is_running(ListenerPid)->
 % This function is called to initialize the gen_server.
 % It registers the analytics_collector Pid and creates the analytics ets to
 % collect data.
-init([ListenerPid, K, T]) ->
+init([ListenerPid]) ->
 	?MODULE:create_events_table(),
 	ListenersMap = #{},
 	bootstrap_list_manager:enroll_erl_node(),
 	singleton:notify_server_is_running(ListenerPid, ?MODULE),
-	{ok, {K, T, ListenersMap}}
+	{ok, {ListenersMap}}
 .
 
-% This function is used to handle the requests
-% made to the analytics_collector requiring 
-% the simulation parameters K and T
-handle_call({get_simulation_parameters}, _From, State) ->
-	{K,T,_} = State,
-	{reply, {K,T}, State}
+handle_call(_R,_From,State) ->
+	{reply, ok, State}
 .
 
 % This clause handle the registration of a generic event
 handle_cast({new_event, Pid, EventType, Event}, State) ->
-	{_,_,ListenersMap} = State,
+	{ListenersMap} = State,
 	utils:debug_print("ADDING ~p",[EventType]),
 	?MODULE:register_new_event(Pid, EventType, Event, ListenersMap),
 	{noreply, State};
@@ -571,7 +566,7 @@ handle_cast({shut}, State) ->
 	{noreply, State};
 % This clause handle the registration of an event listener
 handle_cast({new_listener, Pid, EventType}, State) ->
-	{K,T,ListenersMap} = State,
+	{ListenersMap} = State,
 	if(ListenersMap == undefined) ->
 		NewListenersMap = #{EventType=>[Pid]};
 	true ->
@@ -584,7 +579,7 @@ handle_cast({new_listener, Pid, EventType}, State) ->
 		end,
 		NewListenersMap = maps:put(EventType, NewEventListeners, ListenersMap)
 	end,
-	{noreply, {K,T,NewListenersMap}}
+	{noreply, {NewListenersMap}}
 .
 
 % This function is used to wait for
@@ -613,3 +608,7 @@ location() ->
     singleton:location(local, ?MODULE)
 .
 
+% This function checks if the analytics collector is alive
+is_alive() ->
+	singleton:is_alive(?MODULE)
+.

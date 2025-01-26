@@ -82,14 +82,16 @@ start_new_nodes(Bootstraps, Nodes, K, T) ->
 % This function is used to destroy the simulation
 % It kills all the processes and the analytics_collector
 destroy() ->
-    AllProcesses = analytics_collector:get_node_list(),
+    AllProcesses = lists:flatten(analytics_collector:aggregate_call(get_node_list,[])),
+
     lists:foreach(
         fun(Pid) ->
             node:kill(Pid)
         end,
         AllProcesses
     ),
-    analytics_collector:kill(),
+    
+    analytics_collector:aggregate_call(kill,[]),
     bootstrap_list_manager:kill()
     % exit(self(),kill)
 .

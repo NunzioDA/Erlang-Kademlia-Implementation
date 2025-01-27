@@ -3,7 +3,7 @@
 % Author(s): Nunzio D'Amore, Francesco Rossi
 % Date: 2025-01-23
 % Description: This module implements the global 
-% singleton server managing the list of bootstrap nodes.
+% singleton server managing the kademlia enviroment.
 % --------------------------------------------------------------------
 -module(kademlia_enviroment).
 
@@ -48,6 +48,7 @@ get_bootstrap_list() ->
     BootstrapList
 .
 
+% This function returns the list of erlang nodes
 get_erl_nodes() ->
     {ok, ErlNodesList} = singleton:make_request(call, {get_erl_nodes_list}, ?MODULE),
     ErlNodesList

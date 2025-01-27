@@ -10,21 +10,22 @@
 -module(spare_node_manager).
 -behaviour(gen_server).
 
--export([start/2, start_link/4, init/1, handle_call/3, handle_cast/2, delegate/1, append_node/5, handle_info/2]).
+-export([start/2, start_link/5, init/1, handle_call/3, handle_cast/2, delegate/1, append_node/5, handle_info/2]).
 
 % Starting the spare node manager linking it to the parent
 start(RoutingTable, K)->
     ParentAddress = com:my_address(),
     Verbose = utils:verbose(),
-    Pid = ?MODULE:start_link(ParentAddress,Verbose, RoutingTable, K),
+    ThreadTable = thread:create_threads_table(),
+    Pid = ?MODULE:start_link(ParentAddress, Verbose, ThreadTable, RoutingTable, K),
     thread:save_thread(Pid),
     thread:save_named(spare_node_manager, Pid),
     Pid
 .
 
 % starting gen server
-start_link(ParentAddress, Verbose, RoutingTable, K) ->
-    {ok, Pid} = gen_server:start_link(?MODULE, [ParentAddress, Verbose, RoutingTable, K], []),
+start_link(ParentAddress, Verbose, ThreadTable, RoutingTable, K) ->
+    {ok, Pid} = gen_server:start_link(?MODULE, [ParentAddress, Verbose, ThreadTable, RoutingTable, K], []),
     Pid
 .
 
@@ -40,9 +41,8 @@ delegate(Pid)->
 .
 
 % Initializing gen_server
-init([ParentAddress, Verbose, RoutingTable, K]) ->
-    utils:set_verbose(Verbose),
-    com:save_address(ParentAddress),
+init([ParentAddress, Verbose, ThreadTable, RoutingTable, K]) ->
+    thread:init_thread(ParentAddress, Verbose, ThreadTable),
     LastUpdatedBranch = -1,
     {ok, {RoutingTable, K, LastUpdatedBranch}}
 .

@@ -398,7 +398,7 @@ aggregate_results(Function) ->
 % This function is used to make an aggregate call
 % to the analytics_collector on all the erlang nodes
 aggregate_call(Function, Args) ->
-	ErlNodes = bootstrap_list_manager:get_erl_nodes(),
+	ErlNodes = kademlia_enviroment:get_erl_nodes(),
 	Results = lists:foldl(
 		fun(Node, Acc) ->			
 			case net_adm:ping(Node) of
@@ -539,7 +539,7 @@ notify_server_is_running(ListenerPid)->
 init([ListenerPid]) ->
 	?MODULE:create_events_table(),
 	ListenersMap = #{},
-	bootstrap_list_manager:enroll_erl_node(),
+	kademlia_enviroment:enroll_erl_node(),
 	singleton:notify_server_is_running(ListenerPid, ?MODULE),
 	{ok, {ListenersMap}}
 .

@@ -15,9 +15,9 @@
 % the shell pid
 start_enviroment(K,T) ->
     ?MODULE:registerShell(),
-    % Starting the bootstrap_list_manager
-    bootstrap_list_manager:start(K,T),
-    bootstrap_list_manager:wait_for_initialization(),
+    % Starting the kademlia_enviroment
+    kademlia_enviroment:start(K,T),
+    kademlia_enviroment:wait_for_initialization(),
     % Starting the analytics_collector
     analytics_collector:start(),
     analytics_collector:wait_for_initialization()    
@@ -29,7 +29,7 @@ enviroment_status() ->
     case analytics_collector:is_alive() of
         true -> local_enviroment_exists;
         false -> 
-            case bootstrap_list_manager:is_alive() of
+            case kademlia_enviroment:is_alive() of
                 true -> global_enviroment_exists;
                 false -> no_enviroment
             end
@@ -46,7 +46,7 @@ start_new_nodes(Bootstraps, Nodes, K, T) ->
         Status when Status =:= global_enviroment_exists; Status =:= local_enviroment_exists  -> 
             utils:print("An existing enviroment has been found: "),
             
-            case bootstrap_list_manager:get_simulation_parameters() of
+            case kademlia_enviroment:get_simulation_parameters() of
                 {ExistingK, _} ->
                     if(ExistingK /= K) ->
                         utils:print("~n[ERROR] -> Inconsistent K parameter. ~n"),
@@ -102,7 +102,7 @@ registerShell() ->
 destroy() ->
 
     AllProcesses = 
-        case bootstrap_list_manager:is_alive() of
+        case kademlia_enviroment:is_alive() of
             true ->
                 lists:flatten(analytics_collector:aggregate_call(get_node_list,[]));
             false -> 
@@ -122,10 +122,10 @@ destroy() ->
         AllProcesses
     ),
 
-    case bootstrap_list_manager:is_alive() of
+    case kademlia_enviroment:is_alive() of
         true ->
             analytics_collector:aggregate_call(kill,[]),
-            bootstrap_list_manager:kill();
+            kademlia_enviroment:kill();
         false ->
             analytics_collector:kill()
     end

@@ -169,7 +169,7 @@ test_dying_process() ->
         T, 
         [stored_value]
     ),
-    [BootstrapNode|_] = bootstrap_list_manager:get_bootstrap_list(),
+    [BootstrapNode|_] = kademlia_enviroment:get_bootstrap_list(),
     
     
     utils:print("~nRequiring routing table to the bootstrapnode[~p]...~n",[BootstrapNode]),
@@ -277,7 +277,7 @@ test_lookup_meantime() ->
     ),
 
     utils:print("~nSaving 'foo' => 0 in the network...~n"),
-    [BootstrapNode | _] = bootstrap_list_manager:get_bootstrap_list(),
+    [BootstrapNode | _] = kademlia_enviroment:get_bootstrap_list(),
     node:distribute(BootstrapNode,"foo", 0),
     % Waiting to make sure the value is delivered
     ?MODULE:wait_for_stores(20),
@@ -327,7 +327,7 @@ test_republisher() ->
     ?MODULE:start_simulation(BootstrapNodes, Nodes, K, T, [stored_value]),
     
 
-    [BootstrapNode | _] = bootstrap_list_manager:get_bootstrap_list(),
+    [BootstrapNode | _] = kademlia_enviroment:get_bootstrap_list(),
     utils:print("~nSaving 'foo' => 0 in the network with node ~p...~n", [BootstrapNode]),
     node:distribute(BootstrapNode,"foo", 0),    
     ?MODULE:wait_for_stores(20),

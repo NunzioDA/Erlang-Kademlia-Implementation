@@ -1,11 +1,11 @@
 % --------------------------------------------------------------------
-% Module: bootstrap_list_manager
+% Module: kademlia_enviroment
 % Author(s): Nunzio D'Amore, Francesco Rossi
 % Date: 2025-01-23
 % Description: This module implements the global 
 % singleton server managing the list of bootstrap nodes.
 % --------------------------------------------------------------------
--module(bootstrap_list_manager).
+-module(kademlia_enviroment).
 
 -export([init/1, handle_call/3, handle_cast/2, enroll_bootstrap/0, get_bootstrap_list/0]).
 -export([start/2, location/0, enroll_erl_node/0, get_erl_nodes/0, is_alive/0]).
@@ -13,19 +13,19 @@
 
 -behaviour(singleton).
 
-% This function starts the bootstrap_list_manager
+% This function starts the kademlia_enviroment
 start(K, T) ->
     singleton:start(?MODULE, [K, T], global)
 .
 
 % This function returns the location of the
-% bootstrap_list_manager
+% kademlia_enviroment
 location() ->
     singleton:location(global, ?MODULE)
 .
 
 % This function waits for the initialization of the
-% bootstrap_list_manager
+% kademlia_enviroment
 wait_for_initialization() ->
 	singleton:wait_for_initialization(?MODULE)
 .
@@ -54,13 +54,13 @@ get_erl_nodes() ->
 .
 
 % This function is used to make a request
-% to the bootstrap_list_manager to get the current
+% to the kademlia_enviroment to get the current
 % simulation parameters K and T
 get_simulation_parameters() ->
 	singleton:make_request(call, {get_simulation_parameters}, ?MODULE)
 .
 
-% This function initializes the bootstrap_list_manager
+% This function initializes the kademlia_enviroment
 init([ListenerPid, K, T]) ->
     singleton:notify_server_is_running(ListenerPid, ?MODULE),
     BootstrapList = [],
@@ -80,7 +80,7 @@ handle_call({get_erl_nodes_list}, _, State) ->
 	{reply, {ok,ErlNodes}, State}
 ;
 % This function is used to handle the requests
-% made to the bootstrap_list_manager requiring 
+% made to the kademlia_enviroment requiring 
 % the simulation parameters K and T
 handle_call({get_simulation_parameters}, _From, State) ->
 	{_,_,K,T} = State,
@@ -111,7 +111,7 @@ is_alive() ->
 	singleton:is_alive(?MODULE)
 .
 
-% This function kills the bootstrap_list_manager
+% This function kills the kademlia_enviroment
 kill() ->
     case ?MODULE:location() of
         undefined -> ok;

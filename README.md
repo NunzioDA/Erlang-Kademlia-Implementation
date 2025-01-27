@@ -49,7 +49,7 @@ Use the following commands to start a custom simulation and control the network.
 1. Getting enrolled bootstrap nodes:
 
     ```erlang
-    bootstrap_list_manager:get_bootstrap_list().
+    kademlia_enviroment:get_bootstrap_list().
     ``` 
 2. Getting enrolled nodes:
 

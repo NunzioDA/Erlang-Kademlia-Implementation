@@ -567,11 +567,7 @@ handle_info({'EXIT', FromPid, _}, State) ->
     end, 
     thread:check_threads_status(),
     {noreply, State};
-handle_info({thread_get_named,From, Name}, State) ->
-    thread:return_named(From, Name,get(Name)),
-    {noreply, State}
-;
-handle_info(_,State) ->
+handle_info(_,State) ->    
     {noreply, State}
 .    
 

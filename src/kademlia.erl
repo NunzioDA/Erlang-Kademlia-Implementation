@@ -26,11 +26,11 @@ start_enviroment(K,T) ->
 % This function is used to check 
 % the status of the enviroment
 enviroment_status() ->
-    case bootstrap_list_manager:is_alive() of
-        true -> global_enviroment_exists;
+    case analytics_collector:is_alive() of
+        true -> local_enviroment_exists;
         false -> 
-            case analytics_collector:is_alive() of
-                true -> local_enviroment_exists;
+            case bootstrap_list_manager:is_alive() of
+                true -> global_enviroment_exists;
                 false -> no_enviroment
             end
     end

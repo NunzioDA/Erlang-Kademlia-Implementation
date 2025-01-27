@@ -15,24 +15,8 @@
 -export([get_threads/0, send_message_to_my_threads/1, kill/1, check_threads_status/0, get_named/1,thread_table_name/0]).
 -export([create_threads_table/0, thread_table_exists/0, save_in_thread_table/2]).
 -export([get_thread_table_ref/0, save_thread_table_ref/1, lookup_in_thread_table/1, update_my_thread_list/1]).
--export([named_thread_cast/1,prova/0, init_thread/3]).
+-export([named_thread_cast/1, init_thread/3]).
 
-prova()->
-    P = thread:start(
-        fun()->
-            Pid=thread:get_named(porcoddio),
-            utils:print("Found ~p~n",[Pid])
-        end
-    ),
-    timer:sleep(1000),
-    thread:save_named(porcoddio,P),
-    thread:start(
-        fun()->
-            Pid=thread:get_named(porcoddio),
-            utils:print("Found ~p~n",[Pid])
-        end
-    )
-.
 
 start(Function) ->
     ParentAddress = com:my_address(),

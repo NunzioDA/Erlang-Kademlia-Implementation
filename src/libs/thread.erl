@@ -12,18 +12,40 @@
 -module(thread).
 
 -export([start/1, check_verbose/0, set_verbose/1, kill_all/0, save_thread/1, save_named/2, receive_last_verbose/1]).
--export([get_threads/0, send_message_to_my_threads/1, kill/1, check_threads_status/0, get_named/1]).
--export([get_named_from_parent/1, return_named/3]).
+-export([get_threads/0, send_message_to_my_threads/1, kill/1, check_threads_status/0, get_named/1,thread_table_name/0]).
+-export([create_threads_table/0, thread_table_exists/0, save_in_thread_table/2]).
+-export([get_thread_table_ref/0, save_thread_table_ref/1, lookup_in_thread_table/1, update_my_thread_list/1]).
+-export([named_thread_cast/1,prova/0, init_thread/3]).
+
+prova()->
+    P = thread:start(
+        fun()->
+            Pid=thread:get_named(porcoddio),
+            utils:print("Found ~p~n",[Pid])
+        end
+    ),
+    timer:sleep(1000),
+    thread:save_named(porcoddio,P),
+    thread:start(
+        fun()->
+            Pid=thread:get_named(porcoddio),
+            utils:print("Found ~p~n",[Pid])
+        end
+    )
+.
 
 start(Function) ->
     ParentAddress = com:my_address(),
     Verbose = utils:verbose(),
+
+    ThreadTable = create_threads_table(),
+
     Pid = spawn_link(
         fun()->
             % Saving parent address and verbose in the new process
             % so it can behave like the parent
-            utils:set_verbose(Verbose),
-            com:save_address(ParentAddress),
+
+            ?MODULE:init_thread(ParentAddress, Verbose,ThreadTable),
             Function()
         end
     ),
@@ -31,6 +53,11 @@ start(Function) ->
     Pid
 .
 
+init_thread(ParentAddress, Verbose, ThreadTableRef) ->
+    utils:set_verbose(Verbose),
+    com:save_address(ParentAddress),
+    ?MODULE:save_thread_table_ref(ThreadTableRef)
+.
 % This method kills a thread where Thread is the Pid of the thread to kill
 kill(Thread) ->
     unlink(Thread),
@@ -71,11 +98,65 @@ receive_last_verbose(LastVerbose) ->
     end
 .
 
+thread_table_name() ->
+    MyPid = com:my_address(),
+    TableNameString = pid_to_list(MyPid) ++ "_threads",
+    TableNameAtom = list_to_atom(TableNameString),
+    TableNameAtom
+.
+
+create_threads_table() ->
+   case ?MODULE:thread_table_exists() of
+        false -> 
+            TableName = ?MODULE:thread_table_name(),
+            Ref = ets:new(TableName, [set, public]),
+            ?MODULE:save_thread_table_ref(Ref),
+            Ref;
+        true -> 
+            ?MODULE:get_thread_table_ref()
+    end
+.
+
+thread_table_exists() ->
+    case get_thread_table_ref() of
+        undefined -> false;
+        Ref -> 
+            % Check if the reference is still valid
+            ets:info(Ref) /= undefined
+    end
+.
+
+save_thread_table_ref(Ref) ->
+    put(thread_table, Ref)
+.
+
+get_thread_table_ref() ->
+    get(thread_table)
+.
+
+save_in_thread_table(Key, Value) ->
+    ThereadTable = ?MODULE:get_thread_table_ref(),
+    ets:insert(ThereadTable, {Key, Value})
+.
+
+lookup_in_thread_table(Key) ->
+    ThereadTable = ?MODULE:get_thread_table_ref(),
+    case ets:lookup(ThereadTable, Key) of
+        [] -> undefined;
+        [{_, Value}] -> Value
+    end
+.
+
+
 % This method is used to save the thread Pid in the 
 % Parent process dictionary.
 save_thread(Pid)->
     Threads = ?MODULE:get_threads(),
-    put(my_threads, [Pid | Threads])
+    ?MODULE:update_my_thread_list([Pid | Threads])
+.
+
+update_my_thread_list(ThreadList) ->
+    ?MODULE:save_in_thread_table('internal:my_threads', ThreadList) 
 .
 
 check_threads_status() ->
@@ -92,13 +173,13 @@ check_threads_status() ->
         [],
         Threads
     ),
-    put(my_threads, NewThreads)
+    ?MODULE:update_my_thread_list(NewThreads)
 .  
 
 % This method is used to get all the threads started
 % from a parent process 
 get_threads() ->
-    case get(my_threads) of
+    case ?MODULE:lookup_in_thread_table('internal:my_threads') of
         undefined -> [];
         Threads -> Threads
     end
@@ -129,15 +210,20 @@ send_message_to_my_threads(Message) ->
         [],
         Threads
     ),
-    put(my_threads, NewThreads),
+    ?MODULE:update_my_thread_list(NewThreads),
     ok
+.
+
+named_thread_cast(Name) ->
+    list_to_atom("external:" ++ atom_to_list(Name))
 .
 
 % This function is used to save 
 % a thread Pid with a name in the
 % current process dictionary
 save_named(Name, Pid) when is_pid(Pid) ->
-    put(Name, Pid)
+    CastedName = ?MODULE:named_thread_cast(Name),
+    ?MODULE:save_in_thread_table(CastedName, Pid)
 .
 
 % This function is used to get 
@@ -146,30 +232,10 @@ save_named(Name, Pid) when is_pid(Pid) ->
 % process dictionary or in the parent
 % process dictionary
 get_named(Name) ->
-    case get(Name) of
-        undefined -> % It may be a subprocess of the node.
-                     % Requiring node dictionary to get thread pid
-            ?MODULE:get_named_from_parent(Name);
+    CastedName = ?MODULE:named_thread_cast(Name),
+    case ?MODULE:lookup_in_thread_table(CastedName) of
+        undefined -> undefined;
         % Returning the named thread pid
         ServerPidFound -> ServerPidFound
     end
-.
-
-% This function is used to get the pid of a thread
-% saved in the parent process dictionary
-get_named_from_parent(Name) ->    
-    com:my_address() ! {thread_get_named, self(), Name},
-    receive 
-        {thread_found_named, Name, ServerPidFound} -> ServerPidFound
-    after 1000 ->
-        undefined
-    end
-.
-
-% This function is used to return the pid of a thread
-% saved in the parent process dictionary
-% It is used by the parent process to return the pid
-% response to the get_named_from_parent/1 function
-return_named(To, Name, Pid) ->
-    To ! {thread_found_named, Name, Pid}
 .

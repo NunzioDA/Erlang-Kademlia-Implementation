@@ -18,37 +18,51 @@
 -export([named_thread_cast/1, init_thread/3]).
 
 
+% This method is used to start a new thread. 
+% The thread is started with the function passed as argument.
+% The thread is linked to the parent process so that if the parent
+% process dies, the thread dies too.
+% The thread is saved in the parent thread table.
+% The thread is started with the same verbosity and address
+% of the parent process.
 start(Function) ->
+    % Saving the parent address, verbosity and 
+    % thread table reference
     ParentAddress = com:my_address(),
     Verbose = utils:verbose(),
-
     ThreadTable = create_threads_table(),
 
+    % Start the thread
     Pid = spawn_link(
-        fun()->
-            % Saving parent address and verbose in the new process
-            % so it can behave like the parent
-
-            ?MODULE:init_thread(ParentAddress, Verbose,ThreadTable),
+        fun()->            
+            ?MODULE:init_thread(ParentAddress, Verbose, ThreadTable),
             Function()
         end
     ),
+
+    % Save the thread in the parent thread table
     ?MODULE:save_thread(Pid),
     Pid
 .
 
+% This method is used to initialize the thread
+% with the verbosity and the address of the parent process
+% The thread table reference is saved in the process dictionary
+% as well so the thread can access the table
 init_thread(ParentAddress, Verbose, ThreadTableRef) ->
     utils:set_verbose(Verbose),
     com:save_address(ParentAddress),
     ?MODULE:save_thread_table_ref(ThreadTableRef)
 .
-% This method kills a thread where Thread is the Pid of the thread to kill
+% This method kills a thread where Thread is the 
+% Pid of the thread to kill
 kill(Thread) ->
     unlink(Thread),
     exit(Thread, kill)
 .
 
-% This method kills all the threads started from the parent process
+% This method kills all the threads started 
+% from the parent process
 kill_all()->
     Threads = ?MODULE:get_threads(),
     lists:foreach(
@@ -82,6 +96,7 @@ receive_last_verbose(LastVerbose) ->
     end
 .
 
+% This method is used to get the name of the thread table
 thread_table_name() ->
     MyPid = com:my_address(),
     TableNameString = pid_to_list(MyPid) ++ "_threads",
@@ -89,6 +104,11 @@ thread_table_name() ->
     TableNameAtom
 .
 
+% This method is used to create the thread table
+% if it does not exist yet. The table is created as a set
+% and is public so that every thread can access it.
+% The reference to the table is saved in the process dictionary.
+% If the table already exists, the reference is returned.
 create_threads_table() ->
    case ?MODULE:thread_table_exists() of
         false -> 
@@ -101,6 +121,8 @@ create_threads_table() ->
     end
 .
 
+% This method is used to check if the thread table exists
+% and if the reference is still valid.
 thread_table_exists() ->
     case get_thread_table_ref() of
         undefined -> false;
@@ -110,19 +132,29 @@ thread_table_exists() ->
     end
 .
 
+% This method is used to save 
+% the reference to the thread table
+% in the process dictionary
 save_thread_table_ref(Ref) ->
     put(thread_table, Ref)
 .
 
+% This method is used to get 
+% the reference to the thread 
+% table from the process dictionary       
 get_thread_table_ref() ->
     get(thread_table)
 .
 
+% This method is used to save a 
+% key-value pair in the thread table
 save_in_thread_table(Key, Value) ->
     ThereadTable = ?MODULE:get_thread_table_ref(),
     ets:insert(ThereadTable, {Key, Value})
 .
 
+% This method is used to lookup a 
+% key in the thread table
 lookup_in_thread_table(Key) ->
     ThereadTable = ?MODULE:get_thread_table_ref(),
     case ets:lookup(ThereadTable, Key) of
@@ -139,10 +171,14 @@ save_thread(Pid)->
     ?MODULE:update_my_thread_list([Pid | Threads])
 .
 
+% This method is used to update the thread list
+% in the parent process dictionary
 update_my_thread_list(ThreadList) ->
     ?MODULE:save_in_thread_table('internal:my_threads', ThreadList) 
 .
 
+% This method is used to check if the threads 
+% are still alive and remove the dead ones from the list
 check_threads_status() ->
     Threads = ?MODULE:get_threads(),
     NewThreads = lists:foldl(
@@ -198,8 +234,13 @@ send_message_to_my_threads(Message) ->
     ok
 .
 
-named_thread_cast(Name) ->
-    list_to_atom("external:" ++ atom_to_list(Name))
+% This function is used to cast
+% a generic name to an atom
+named_thread_cast(Name) when is_atom(Name) -> 
+    named_thread_cast(atom_to_list(Name))
+;
+named_thread_cast(Name) when is_list(Name) ->
+    list_to_atom("external:" ++ Name)
 .
 
 % This function is used to save 

@@ -550,9 +550,9 @@ terminate(Reason, _State) ->
 
 handle_info({'EXIT', FromPid, _}, State) ->
     {RoutingTable, _, K, T, Bucket_Size, MyValuesTable} = State,
-    JoinThread = get(routing_table_filler_pid),
-    RepublisherThread = get(republisher_pid),
-    SpareNodeManagerThread = get(spare_node_manager),
+    JoinThread = thread:get_named(routing_table_filler_pid),
+    RepublisherThread = thread:get_named(republisher_pid),
+    SpareNodeManagerThread = thread:get_named(spare_node_manager),
 
     if FromPid == JoinThread ->
         % Restarting join thread
